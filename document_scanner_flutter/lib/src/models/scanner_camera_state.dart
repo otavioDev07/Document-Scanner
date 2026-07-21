@@ -2,7 +2,12 @@ enum ScannerCameraState {
   uninitialized,
   initializing,
   ready,
+  starting,
+  previewing,
+  capturing,
   processing,
+  paused,
+  error,
   disposed,
 }
 

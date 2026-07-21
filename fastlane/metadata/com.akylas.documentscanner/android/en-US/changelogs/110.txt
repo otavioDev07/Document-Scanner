@@ -1,3 +1,0 @@
-Bug fixes:
-- local folder PDF sync fix
-- Translations update

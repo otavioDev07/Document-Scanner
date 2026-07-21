@@ -1,0 +1,68 @@
+name: Flutter CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Plugin dependencies
+        working-directory: document_scanner_flutter
+        run: flutter pub get
+      - name: Plugin analysis
+        working-directory: document_scanner_flutter
+        run: flutter analyze
+      - name: Plugin tests
+        working-directory: document_scanner_flutter
+        run: flutter test
+      - name: App dependencies
+        working-directory: document_scanner_flutter/example
+        run: flutter pub get
+      - name: App analysis
+        working-directory: document_scanner_flutter/example
+        run: flutter analyze
+      - name: App tests
+        working-directory: document_scanner_flutter/example
+        run: flutter test
+      - name: Android native tests
+        working-directory: document_scanner_flutter/example/android
+        run: ./gradlew :document_scanner_flutter:testDebugUnitTest
+      - name: Android debug APK
+        working-directory: document_scanner_flutter/example
+        run: flutter build apk --debug
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+      - name: Bootstrap OpenCV
+        working-directory: document_scanner_flutter
+        run: ./tool/bootstrap_ios.sh
+      - name: Dependencies
+        working-directory: document_scanner_flutter/example
+        run: flutter pub get
+      - name: iOS simulator build
+        working-directory: document_scanner_flutter/example
+        run: flutter build ios --simulator --debug --no-pub

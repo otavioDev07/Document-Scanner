@@ -1,5 +1,7 @@
 # Análise do build legado e do build Flutter
 
+> Documento histórico do pipeline anterior. NativeScript, Webpack, flavors e workflows antigos foram removidos após a migração; os comandos atuais estão em `BUILD_FLUTTER.md`.
+
 ## Estado do build legado
 
 O clone não é autossuficiente para build nativo:

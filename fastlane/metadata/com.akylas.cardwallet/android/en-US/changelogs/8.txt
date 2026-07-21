@@ -1,5 +1,0 @@
-Bug fixes:
-- regression fix on error from latest version
-- better support of "remote" imported image like from Nextcloud
-- permission issue while exporting to Download folder (default)
-- Translations update

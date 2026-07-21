@@ -1,3 +1,0 @@
-Bug fixes:
-- update folders correctly on folder change where there are only folders
-- Translations update

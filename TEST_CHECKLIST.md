@@ -1,92 +1,69 @@
-# Checklist de testes
+# Checklist de validação
 
-## Resultado automatizado desta entrega
+Última execução: 21 de julho de 2026.
 
-- [x] `flutter analyze` — sem issues.
-- [x] `flutter test` — 13 testes aprovados.
-- [x] modelos e parsing de payload.
-- [x] ordenação/validação TL, TR, BR, BL.
-- [x] round-trip de coordenadas em 0/90/180/270.
-- [x] mirror e BoxFit contain/cover.
-- [x] arraste de handle no overlay.
-- [x] estado, dispose e erros do controller.
-- [x] MethodChannel com documento ausente, payload inválido e erro nativo.
-- [x] teste JVM Kotlin de capabilities.
-- [x] `flutter build apk --debug`.
-- [x] inspeção do APK: plugin/OpenCV/STL presentes em arm64-v8a, armeabi-v7a e x86_64.
-- [ ] integration test em dispositivo/emulador — não havia device no ambiente.
-- [ ] teste funcional iOS — fase não implementada.
+## Automatizado nesta máquina
 
-## Matriz manual Android — imagem estática
+- [x] plugin `flutter analyze`: sem issues.
+- [x] plugin `flutter test`: 15 testes.
+- [x] app `flutter analyze`: sem issues.
+- [x] app `flutter test`: 4 testes.
+- [x] Kotlin `testDebugUnitTest`: 3 testes.
+- [x] ordem/validação TL, TR, BR, BL.
+- [x] normalização, rotação, mirror, contain e cover.
+- [x] overlay/editor e estados visuais.
+- [x] controller, erros, eventos inválidos e dispose.
+- [x] persistência multipágina, reordenação, rotação, filtro/original e recuperação.
+- [x] geração de PDF.
+- [x] JNI/C++ e filtros compilados no APK.
+- [x] APK debug reconstruído após remoção do legado.
+- [x] APK contém plugin/OpenCV/STL nas três ABIs.
+- [x] pacote Objective-C++ iOS compilado.
+- [x] fontes Swift do plugin typechecked.
+- [ ] build Flutter iOS: bloqueado por runtime de simulator ausente.
+- [ ] integration test: nenhum device/emulador disponível.
 
-- [ ] JPEG portrait com EXIF 90.
-- [ ] JPEG landscape com EXIF 180/270.
-- [ ] PNG sem EXIF.
-- [ ] documento claro em fundo escuro.
-- [ ] documento escuro em fundo claro.
-- [ ] baixa luz, sombra, reflexo e blur.
-- [ ] documento parcialmente fora da imagem.
-- [ ] nenhuma forma quadrilateral: resposta sem documento, sem crash.
-- [ ] foto 12 MP, 24 MP e 48 MP com monitoramento de memória.
-- [ ] picker cancelado e Activity recriada durante picker.
-- [ ] arquivo removido entre seleção e detecção.
-- [ ] 50 ciclos selecionar → detectar → editar → crop.
-- [ ] crop com cantos próximos mas convexos.
-- [ ] cantos inválidos/autointersectados rejeitados no Dart.
-- [ ] app em background/foreground durante processamento.
+APK: 275 MiB, SHA-256 `e4a6943592ff662dc6a7825a950cd66ba03f16ebd3b635293e39ee58fd0f4abf`.
 
-## Alinhamento visual
+## Câmera e lifecycle em hardware
 
-Para cada caso, testar `BoxFit.contain` e `BoxFit.cover`:
+- [ ] negar/aceitar permissão e retornar de Settings.
+- [ ] preview alinhado em portrait/landscape, contain/cover e split-screen.
+- [ ] rotação 0/90/180/270 e câmera frontal/mirror.
+- [ ] flash off/auto/on/torch e autofoco.
+- [ ] captura manual e auto-captura sem duplicidade.
+- [ ] background/foreground, navegação repetida e troca de câmera.
+- [ ] 60 minutos de stress sem ANR, crash, buffer ou Texture retidos.
+- [ ] FPS/tempo/drops coerentes com diagnósticos ligados e zero overhead relevante desligados.
 
-- [ ] 0°, sem mirror;
-- [ ] 90°, sem mirror;
-- [ ] 180°, sem mirror;
-- [ ] 270°, sem mirror;
-- [ ] todos os anteriores com mirror;
-- [ ] viewport portrait, landscape, square e split-screen;
-- [ ] handle preso à borda correta após resize/rotação da tela.
+## Imagem, crop e filtros
 
-Tolerância recomendada: erro de overlay menor que 2 px em fixture sintética e menor que 0,5% da menor dimensão em fotos reais.
+- [ ] JPEG com EXIF 90/180/270 e PNG.
+- [ ] baixa luz, sombra, reflexo, blur e nenhum documento.
+- [ ] fotos 12/24/48 MP com memória monitorada.
+- [ ] ajuste de cantos próximo das bordas e quadrilátero inválido.
+- [ ] crop/filtros Android e iOS comparados visualmente.
+- [ ] 50 ciclos importar/detectar/editar/filtrar/salvar.
 
-## Regressão legado × Flutter
+## Produto
 
-Criar corpus versionado sem dados pessoais, com pelo menos 100 imagens e ground truth manual.
+- [ ] reabrir biblioteca após kill durante metadata/página pendente.
+- [ ] documento grande multipágina, reordenação e exclusão.
+- [ ] PDF com todas as rotações/filtros.
+- [ ] share sheet em Android e iOS, incluindo iPad.
+- [ ] limpeza/pressão de armazenamento e mensagens de erro.
 
-- [ ] executar detector legado e plugin com opções equivalentes;
-- [ ] comparar IoU dos quadriláteros;
-- [ ] registrar falso positivo/falso negativo;
-- [ ] comparar dimensões e PSNR/SSIM do crop;
-- [ ] separar mudança de OpenCV 4.8 → 4.12 de mudança de bridge;
-- [ ] aprovar thresholds antes de alterar algoritmo.
+## Regressão do detector
 
-## Performance e memória
+- [ ] corpus sem dados pessoais com pelo menos 100 imagens.
+- [ ] comparar OpenCV legado 4.8 e atual 4.12 por IoU/falso positivo/falso negativo.
+- [ ] comparar dimensões e PSNR/SSIM do crop.
+- [ ] aprovar thresholds antes de qualquer mudança de algoritmo.
 
-- [ ] tempo p50/p95 de decode, detect, crop e encode por classe de device;
-- [ ] pico de RSS/heap Java/native;
-- [ ] ausência de bitmap/Mat retido após 50 operações;
-- [ ] nenhuma operação pesada na main thread;
-- [ ] cancelamento/detach não entrega resultado duas vezes;
-- [ ] arquivo temporário e política de limpeza documentados.
+## Lacunas funcionais
 
-## Futura câmera
-
-- [ ] permissões negada, temporária e permanentemente;
-- [ ] CameraX/AVFoundation abre/fecha sem vazamento;
-- [ ] backpressure keep-only-latest;
-- [ ] frame sempre fechado/liberado em erro;
-- [ ] Texture liberada no dispose;
-- [ ] rotação durante preview;
-- [ ] flash off/auto/on/torch;
-- [ ] alternância câmera frontal/traseira e mirror;
-- [ ] auto-capture: estabilidade, cooldown, cancelamento e apenas uma captura;
-- [ ] 60 minutos de stress sem ANR/crash.
-
-## Release
-
-- [ ] AAB release e split por ABI.
-- [ ] tamanho por ABI registrado.
-- [ ] símbolos nativos preservados/upload para crash reporting.
-- [ ] SBOM e notices OpenCV/Flutter.
-- [ ] workflow não imprime secrets.
-- [ ] install novo e upgrade do consumidor.
+- [ ] OCR/Tesseract.
+- [ ] sincronização cloud/WebDAV.
+- [ ] pastas, favoritos e lixeira.
+- [ ] segurança/backup legado.
+- [ ] traduções.

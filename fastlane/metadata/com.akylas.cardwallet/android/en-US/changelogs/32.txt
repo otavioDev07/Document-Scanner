@@ -1,6 +1,0 @@
-Bug fixes:
-- prevent error while trying to apply transform on pages "without" image
-- sync folder settings layout update
-- trying to prevent errors while syncing
-- default view style fix
-- Translations update

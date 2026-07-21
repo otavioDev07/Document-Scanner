@@ -1,6 +1,0 @@
-[submodule "zxingcpp"]
-	path = zxingcpp
-	url = https://github.com/Akylas/zxing-cpp.git
-[submodule "tools"]
-	path = tools
-	url = https://github.com/Akylas/app-tools.git

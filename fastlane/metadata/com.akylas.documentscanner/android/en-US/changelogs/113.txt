@@ -1,2 +1,0 @@
-Features:
-- allow to change JpegQuality while exporting a PDF

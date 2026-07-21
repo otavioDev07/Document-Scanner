@@ -96,6 +96,11 @@ kotlin {
 dependencies {
     implementation("org.opencv:opencv:4.12.0")
     implementation("androidx.exifinterface:exifinterface:1.4.1")
+    val cameraXVersion = "1.6.1"
+    implementation("androidx.camera:camera-core:$cameraXVersion")
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
+    implementation("androidx.core:core-ktx:1.17.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.0.0")
 }

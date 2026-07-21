@@ -1,5 +1,0 @@
-Bug fixes:
-- prevent app crash on brightness/contrast controls
-- Translated using Weblate (German)
-- android: wrong layout on android < 28
-- android: move to full SAF to remove the need for storage permissions

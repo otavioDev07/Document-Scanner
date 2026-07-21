@@ -1,107 +1,45 @@
-# NativeScript application
-hooks
-/platforms
-node_modules
-
-certs
-/package-lock.json
-/report
-/times.html
-pnpm-lock.yaml
-*.js.map
-e2e/**/*.js
-app/**/*.js
-/mochawesome-report
-/dist
-
-#android
-*.aar
-
-#iOS
-*.framework
-/typings/x86_64
-*.xcframework
-
-# NativeScript Template
-*.js.map
-!webpack.config.js
-
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# General
+# OS and editors
 .DS_Store
-.AppleDouble
-.LSOverride
-.idea
-.cloud
-.project
-.gradle
-.env*
-!.env.ci
-.yarn/install-state.gz
-tmp/
-._.DS_Store
+.idea/
+.vscode/
+*.iml
+*.log
 
-# Visual Studio Code
-.sentryclirc
-/fastlane/report.xml
-*.zip
-dist
-/webpack.stats.json
-/.sentryclirc
-
-
-**/Android/src/main/res/values*/strings.xml
-**/src/main/res/values*/strings.xml
-**/iOS/*.lproj/Localizable.strings
-**/iOS/*.lproj/InfoPlist.strings
-**/iOS/*.lproj/Root.strings
-**/iOS/Settings.bundle/*.lproj
-
-timeline*.json
-times*.html
-
-mf_icons
-test
-**/*.old
-app/assets/map/**
-app/assets/3dmap/**
-/firmware
-/firmwares
-/gpx
-vendor
-build
-/vendor
-.cxx
-/fastlane/report.xml
+# Local secrets and environment
+.env
+.env.*
 *.pem
 
-#alpimaps
-app/**/*.LICENSE.txt
-/app/assets/peakfinder/webapp.js
-/app/assets/**/*.css
-/API_KEYS.json
-dev_assets/styles/osmxml_cleaned/*.xml
-dev_assets/styles/inner_cleaned/*.xml
-dev_assets/styles/mobile-sdk-styles
-dev_assets/styles/base/fonts/osm.ttf
-dev_assets/styles/inner_cleaned/fonts/materialdesignicons-webfont.ttf
-dev_assets/styles/**/*.xml
-dev_assets/styles/test*
-/css2xml_*
-/dev_assets/styles/inner/fonts/osm.ttf
-/dev_assets/styles/osm/fonts/osm.ttf
-/dev_assets/styles/inner/fonts/materialdesignicons-webfont.ttf
+# Flutter and Dart
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/build/
+**/coverage/
 
-#documents
-opencv/**/*
-!opencv/**/README.md
-tesseract/**/*
-!tesseract/**/README.md
-/webpdfviewer/**/*.css
-/app/assets/**/*.html
+# Android
+**/.gradle/
+**/.cxx/
+**/local.properties
+*.jks
+*.keystore
+
+# Apple build output and generated package state
+**/.build/
+**/.swiftpm/
+**/DerivedData/
+**/Pods/
+**/.symlinks/
+**/Flutter/ephemeral/
+**/xcuserdata/
+
+# The iOS OpenCV binary is fetched by tool/bootstrap_ios.sh.
+document_scanner_flutter/native/Frameworks/opencv2.xcframework/
+
+# Archives and temporary files
+*.zip
+*.old
+tmp/

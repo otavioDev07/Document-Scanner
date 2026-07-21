@@ -1,8 +1,0 @@
-Features:
-- added a setting to enable sync on app start (now disabled by default to prevent network access)
-- support landscape mode
-- allow to rename document through ⁝
-
-Bug fixes:
-- another webdav sync error fix
-- Translations update

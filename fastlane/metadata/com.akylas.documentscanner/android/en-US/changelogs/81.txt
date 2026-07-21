@@ -1,5 +1,0 @@
-Bug fixes:
-- text layout fix while editing document crop zone
-- feedback button enabled in all builds
-- prevent adding empty barcodes
-- Translations update

@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:document_scanner_flutter/document_scanner_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,7 +15,7 @@ void main() {
     final NativeStatus status = await controller.initialize();
     expect(status.detectorAvailable, isTrue);
     expect(status.staticImageSupported, isTrue);
-    expect(status.cameraPreviewSupported, isFalse);
+    expect(status.cameraPreviewSupported, Platform.isAndroid);
 
     final ByteData data = await rootBundle.load('assets/test-document.png');
     final Uint8List bytes = data.buffer.asUint8List(

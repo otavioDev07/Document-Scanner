@@ -1,96 +1,73 @@
-# Especificação do bridge Flutter ↔ nativo
+# Especificação Flutter ↔ nativo
 
-Versão do contrato: 0.1.0.
+Contrato: 0.2.0. Implementações: Android e iOS.
 
 ## Transporte
 
 - MethodChannel: `document_scanner_flutter`.
-- Métodos atuais: `getNativeStatus`, `initialize`, `pickImage`, `detectDocument`, `cropDocument`, `dispose`.
-- Métodos de câmera permanecem apenas na API do controller e retornam `CAMERA_PHASE_NOT_IMPLEMENTED` nesta fase.
-- Trabalho OpenCV e I/O nunca é executado na main thread Android.
-- Resultados do MethodChannel são entregues na main thread.
+- EventChannel: `document_scanner_flutter/events`.
+- Preview: Texture Registry; nunca JPEG/bytes por canal.
+- OpenCV, I/O e análise de câmera executam fora da main thread.
 
-## Convenções
+## Convenção de cantos
 
-### Cantos
+Exatamente quatro objetos `{x, y}` normalizados em `[0, 1]`, relativos à imagem orientada:
 
-Lista com exatamente quatro objetos, nesta ordem:
+1. superior esquerdo;
+2. superior direito;
+3. inferior direito;
+4. inferior esquerdo.
 
-1. top-left;
-2. top-right;
-3. bottom-right;
-4. bottom-left.
+`rotationDegrees` e `mirrored` são sempre explícitos. Flutter aplica `ScannerCoordinateMapper` para rotação, mirror e `BoxFit.contain/cover`.
 
-Cada objeto possui `x` e `y` `double` no intervalo fechado `[0, 1]`, relativos à imagem orientada indicada por `imageWidth`/`imageHeight`.
+## Comandos
 
-O Android atual aplica EXIF ao bitmap antes de detectar. Por isso retorna `rotationDegrees: 0` e `mirrored: false`. O contrato mantém esses campos para câmera/iOS e não permite inferi-los do tamanho.
+| Método | Entrada principal | Retorno |
+| --- | --- | --- |
+| `getNativeStatus`, `initialize` | — | plataforma, versões e capabilities |
+| `pickImage` | — | path/mime/displayName ou `null` |
+| `detectDocument` | imagePath + options | dimensões, cantos ou `null`, orientação |
+| `cropDocument` | imagePath + 4 cantos + options | path/width/height |
+| `applyFilter` | imagePath, outputPath, filter, format, quality | path/width/height |
+| `startPreview` | options | textureId, width, height, rotação, mirror |
+| `stopPreview`, `pausePreview` | — | `null` |
+| `resumePreview`, `switchCamera` | — | metadados da Texture |
+| `setFlash` | `off`, `auto`, `on` ou `torch` | `null` |
+| `setAutoCapture` | enabled | `null` |
+| `capture` | — | path da captura e metadados |
+| `getDiagnostics` | — | contadores/FPS/tempo/backpressure |
+| `dispose` | — | `null` |
 
-### Ownership
-
-- Dart possui somente strings de path, números e modelos imutáveis.
-- Kotlin possui e recicla `Bitmap` dentro de cada operação.
-- C++ cria e libera seus `cv::Mat` dentro da chamada JNI.
-- Nenhum ponteiro ou bitmap atravessa chamadas assíncronas.
-- Arquivos selecionados/cortados pertencem ao cache do app consumidor; o consumidor deve persistir o que desejar manter.
-
-## Métodos
-
-### `getNativeStatus()` e `initialize()`
-
-Sem argumentos. Retorno:
-
-```json
-{
-  "platform": "android",
-  "pluginVersion": "0.1.0",
-  "opencvVersion": "4.12.0",
-  "detectorAvailable": true,
-  "staticImageSupported": true,
-  "cameraPreviewSupported": false
-}
-```
-
-`initialize` é idempotente. Na fase atual não abre câmera nem cria recursos long-lived.
-
-### `pickImage()`
-
-Requer Activity Android. Abre `ACTION_OPEN_DOCUMENT`, copia o conteúdo para cache e devolve `null` no cancelamento ou:
+### Opções
 
 ```json
 {
-  "path": "/absolute/cache/path.jpg",
-  "mimeType": "image/jpeg",
-  "displayName": "document.jpg"
+  "detectionResizeThreshold": 1200,
+  "areaScaleMinFactor": 0.04,
+  "maxOutputDimension": 4096,
+  "jpegQuality": 92,
+  "autoCapture": false,
+  "previewResizeThreshold": 200,
+  "previewAreaScaleMinFactor": 0.1,
+  "autoCaptureDistanceThreshold": 50,
+  "autoCaptureDelayMs": 1000,
+  "autoCaptureDurationMs": 1000,
+  "autoCaptureCooldownMs": 1500,
+  "diagnosticsEnabled": false
 }
 ```
 
-Somente uma solicitação pode estar ativa; a segunda recebe `BUSY`.
+Os defaults de detecção/estabilidade foram preservados do baseline; alterações devem passar pelo corpus de regressão.
 
-### `detectDocument`
-
-Entrada:
-
-```json
-{
-  "imagePath": "/absolute/path.jpg",
-  "options": {
-    "detectionResizeThreshold": 1200,
-    "areaScaleMinFactor": 0.04,
-    "maxOutputDimension": 4096,
-    "jpegQuality": 92
-  }
-}
-```
-
-Retorno com documento:
+### Detecção
 
 ```json
 {
   "corners": [
-    {"x": 0.1, "y": 0.1},
-    {"x": 0.9, "y": 0.1},
-    {"x": 0.9, "y": 0.9},
-    {"x": 0.1, "y": 0.9}
+    {"x": 0.08, "y": 0.10},
+    {"x": 0.91, "y": 0.12},
+    {"x": 0.89, "y": 0.90},
+    {"x": 0.10, "y": 0.88}
   ],
   "imageWidth": 3024,
   "imageHeight": 4032,
@@ -101,59 +78,60 @@ Retorno com documento:
 }
 ```
 
-Sem documento, `corners` e `confidence` são `null`. Não inventar confiança: o algoritmo legado não a calibra.
+O detector não possui confiança calibrada; `confidence` permanece `null`.
 
-### `cropDocument`
+### Filtros nativos
 
-Entrada: `imagePath`, `corners` normalizados e `options`. O nativo valida a quantidade/range, calcula o tamanho pelas maiores arestas, limita a maior dimensão e executa `warpPerspective`.
+`applyFilter` aceita `original`, `grayscale`, `highContrast` e `colorBoost`. O app normalmente restaura `original` por cópia byte a byte e chama o OpenCV para os outros três. `outputFormat` é `png` ou `jpeg`; o trabalho pesado não ocorre em Dart.
 
-Retorno:
+### Preview
 
 ```json
 {
-  "path": "/absolute/cache/crop_123.jpg",
-  "width": 1800,
-  "height": 2500
+  "textureId": 4,
+  "width": 1280,
+  "height": 720,
+  "rotationDegrees": 90,
+  "mirrored": false
 }
 ```
 
-### `dispose()`
+Android usa CameraX `STRATEGY_KEEP_ONLY_LATEST`. iOS usa `alwaysDiscardsLateVideoFrames = true`. Há no máximo uma análise ativa; buffers/ImageProxy são liberados em todos os caminhos.
 
-Idempotente. O controller rejeita operações posteriores com `DISPOSED`. Na futura fase câmera, deve cancelar streams/analyzers, devolver Texture e encerrar sessão nativa antes de completar.
+## Eventos
 
-## Erros
+Tipos: `cameraState`, `documentDetected`, `documentLost`, `stabilityChanged`, `autoCaptureProgress`, `captureStarted`, `captureCompleted`, `processingStarted`, `processingCompleted`, `diagnostics`, `error`.
 
-| Código | Situação |
-| --- | --- |
-| `INVALID_ARGUMENT` | path/cantos/opções inválidos |
-| `FILE_NOT_FOUND` | arquivo ausente ou inacessível |
-| `NO_ACTIVITY` | picker sem Activity ou Activity destacada |
-| `BUSY` | picker já ativo |
-| `ENGINE_DETACHED` | operação cancelada pelo detach da engine |
-| `NATIVE_PROCESSING_ERROR` | exceção OpenCV/JNI/encode |
-| `INVALID_NATIVE_PAYLOAD` | resposta nativa não atende ao modelo Dart |
-| `NO_DOCUMENT` | tentativa de crop sem cantos |
-| `INVALID_STATE` | operação fora do estado do controller |
-| `DISPOSED` | uso após dispose |
-| `CAMERA_PHASE_NOT_IMPLEMENTED` | comando de câmera nesta fase |
-| `IOS_PHASE_NOT_IMPLEMENTED` | fluxo estático ainda não portado para iOS |
+Estados: `searching`, `detected`, `stabilizing`, `stable`, `capturing`, `processing`, `lost`, `error`.
 
-Mensagens ajudam diagnóstico, mas código é o contrato estável. Não incluir path sensível ou bytes de imagem em logs de produção.
+```json
+{
+  "event": "documentDetected",
+  "state": "stabilizing",
+  "timestampMicros": 123456,
+  "corners": [{"x": 0.08, "y": 0.10}],
+  "imageWidth": 720,
+  "imageHeight": 1280,
+  "rotationDegrees": 0,
+  "mirrored": false,
+  "stability": 0.72,
+  "stableFrames": 6,
+  "processingTimeMs": 22.4
+}
+```
 
-## Estado e concorrência
+O exemplo abreviado de `corners` acima representa a forma do payload; eventos de detecção reais sempre enviam os quatro pontos.
 
-Estados Dart: `uninitialized → initializing → ready ↔ processing → disposed`.
+Diagnósticos contêm `framesReceived`, `framesProcessed`, `framesDropped`, `candidatesFound`, `cameraFps`, `analysisFps`, `averageProcessingTimeMs` e `backpressureStrategy`. No Android, drops internos são estimados por timestamps porque CameraX não expõe callback para frames descartados.
 
-O Android usa executor serial de um worker. Isso impede duas operações OpenCV simultâneas no mesmo plugin. A API atual não promete paralelismo; consumidores devem aguardar cada Future. Detach da engine remove o handler e encerra o executor.
+## Ownership e lifecycle
 
-## Extensão prevista para câmera
+- Dart possui apenas valores, modelos e paths.
+- Kotlin/Swift possuem câmera, Texture e buffers.
+- C++ possui `cv::Mat` apenas durante a operação.
+- Saídas temporárias pertencem ao cache; o app copia páginas permanentes para sua biblioteca.
+- `dispose` fecha câmera, analyzer/outputs, stream e Texture; chamadas posteriores são rejeitadas.
 
-Preview deve usar `Texture`:
+## Erros estáveis
 
-- `createCamera` retorna `textureId` e tamanho/orientação;
-- frames continuam nativos;
-- um stream de baixa frequência entrega apenas cantos/estado/timestamps;
-- `capture` devolve path de foto e passa ao mesmo `detectDocument`/`cropDocument`;
-- `disposeCamera` libera CameraX/AVFoundation e a texture.
-
-Uma `PlatformView` só deve ser considerada se houver requisito nativo que Texture não cubra; ela aumenta complexidade de composição, gestos e lifecycle.
+`INVALID_ARGUMENT`, `IMAGE_NOT_FOUND`, `IMAGE_DECODE_FAILED`, `NO_ACTIVITY`, `NO_VIEW_CONTROLLER`, `BUSY`, `CAMERA_PERMISSION_DENIED`, `INVALID_STATE`, `NO_DOCUMENT`, `WRITE_FAILED`, `NATIVE_PROCESSING_ERROR`, `INVALID_NATIVE_PAYLOAD`, `ENGINE_DETACHED` e `DISPOSED`.

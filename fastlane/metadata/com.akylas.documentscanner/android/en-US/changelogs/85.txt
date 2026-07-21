@@ -1,2 +1,0 @@
-Bug fixes:
-- regression fix on error from latest version

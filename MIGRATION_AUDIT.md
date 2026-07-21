@@ -1,5 +1,7 @@
 # Auditoria técnica da migração para Flutter
 
+> Documento histórico do baseline de 20 de julho de 2026. As conclusões sobre stubs, arquivos legados e estado de build foram superadas pela implementação; consulte `MIGRATION_PROGRESS.md` e `FEATURE_PARITY.md` para o estado atual.
+
 Data da auditoria: 20 de julho de 2026.
 
 ## Resumo executivo

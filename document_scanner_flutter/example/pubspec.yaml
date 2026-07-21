@@ -1,5 +1,6 @@
-name: document_scanner_flutter_example
-description: "Demonstrates how to use the document_scanner_flutter plugin."
+name: oss_document_scanner_flutter
+description: Flutter application for scanning, organizing, exporting, and sharing documents.
+version: 0.2.0+2
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -28,6 +29,11 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  pdf: ^3.13.0
+  share_plus: ^13.2.1
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   integration_test:

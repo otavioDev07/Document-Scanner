@@ -1,3 +1,0 @@
-Bug fixes:
-- biometric check not showing on start
-- READ_PHONE_STATE added again...

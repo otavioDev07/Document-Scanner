@@ -1,3 +1,0 @@
-Bug fixes:
-- crash while trying to add local folder sync
-- pdf import type choice was made persistent on click

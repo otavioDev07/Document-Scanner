@@ -1,9 +1,0 @@
-Bug fixes:
-- settings dialogs showing title twice
-- new color picker allowing to set color using hex string and more
-- update ui on "Always show card names" setting
-- make sure alerts always show buttons for screen with bigger font size
-- webdav folders data sync fix
-- sync fixes for PDF, paperlessNGX. Sync should also now be faster
-- basic implementation for template card fields
-- Translations update

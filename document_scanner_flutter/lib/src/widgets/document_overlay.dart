@@ -14,6 +14,8 @@ class DocumentOverlay extends StatefulWidget {
     this.onCornersChanged,
     this.borderColor = const Color(0xFF00D4A6),
     this.scrimColor = const Color(0x66000000),
+    this.fillColor = const Color(0x1800D4A6),
+    this.borderWidth = 2.5,
     this.handleRadius = 11,
   });
 
@@ -25,6 +27,8 @@ class DocumentOverlay extends StatefulWidget {
   final ValueChanged<List<ScannerPoint>>? onCornersChanged;
   final Color borderColor;
   final Color scrimColor;
+  final Color fillColor;
+  final double borderWidth;
   final double handleRadius;
 
   @override
@@ -86,6 +90,8 @@ class _DocumentOverlayState extends State<DocumentOverlay> {
                 corners: offsets,
                 borderColor: widget.borderColor,
                 scrimColor: widget.scrimColor,
+                fillColor: widget.fillColor,
+                borderWidth: widget.borderWidth,
                 handleRadius: widget.handleRadius,
               ),
               size: viewport,
@@ -100,12 +106,16 @@ class _DocumentOverlayPainter extends CustomPainter {
     required this.corners,
     required this.borderColor,
     required this.scrimColor,
+    required this.fillColor,
+    required this.borderWidth,
     required this.handleRadius,
   });
 
   final List<Offset> corners;
   final Color borderColor;
   final Color scrimColor;
+  final Color fillColor;
+  final double borderWidth;
   final double handleRadius;
 
   Path get _documentPath => Path()
@@ -124,12 +134,13 @@ class _DocumentOverlayPainter extends CustomPainter {
       document,
     );
     canvas.drawPath(outside, Paint()..color = scrimColor);
+    canvas.drawPath(document, Paint()..color = fillColor);
     canvas.drawPath(
       document,
       Paint()
         ..color = borderColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
+        ..strokeWidth = borderWidth,
     );
     for (final Offset corner in corners) {
       canvas.drawCircle(corner, handleRadius, Paint()..color = Colors.white);
@@ -149,5 +160,7 @@ class _DocumentOverlayPainter extends CustomPainter {
       oldDelegate.corners != corners ||
       oldDelegate.borderColor != borderColor ||
       oldDelegate.scrimColor != scrimColor ||
+      oldDelegate.fillColor != fillColor ||
+      oldDelegate.borderWidth != borderWidth ||
       oldDelegate.handleRadius != handleRadius;
 }

@@ -1,6 +1,6 @@
 name: document_scanner_flutter
 description: Reusable Flutter document detection, corner editing, and perspective crop plugin.
-version: 0.1.0
+version: 0.2.0
 publish_to: none # The public name already exists; confirm ownership or rename before publishing.
 homepage: https://github.com/Akylas/OSS-DocumentScanner
 repository: https://github.com/Akylas/OSS-DocumentScanner

@@ -1,3 +1,0 @@
-Bug fixes:
-- untranslated strings are now using english instead of translation key
-- Translations update

@@ -1,3 +1,0 @@
-Bug fixes:
-- many pkpass fixes
-- backup fix

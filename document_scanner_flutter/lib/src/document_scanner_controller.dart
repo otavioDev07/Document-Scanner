@@ -3,12 +3,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../document_scanner_flutter_platform_interface.dart';
+import 'models/camera_preview_info.dart';
 import 'models/capture_result.dart';
 import 'models/crop_result.dart';
 import 'models/detection_result.dart';
 import 'models/native_status.dart';
 import 'models/scanner_camera_state.dart';
 import 'models/scanner_corners.dart';
+import 'models/scanner_diagnostics.dart';
+import 'models/scanner_event.dart';
 import 'models/scanner_exception.dart';
 import 'models/scanner_options.dart';
 import 'models/scanner_point.dart';
@@ -21,30 +24,58 @@ final class DocumentScannerController extends ChangeNotifier {
 
   final ScannerOptions options;
   final DocumentScannerFlutterPlatform _platform;
+  final StreamController<ScannerEvent> _eventController =
+      StreamController<ScannerEvent>.broadcast(sync: true);
 
   ScannerCameraState _state = ScannerCameraState.uninitialized;
+  ScannerDetectionState _detectionState = ScannerDetectionState.searching;
   NativeStatus? _nativeStatus;
+  CameraPreviewInfo? _previewInfo;
   DetectionResult? _lastDetection;
+  CaptureResult? _lastCapture;
+  ScannerDiagnostics? _diagnostics;
+  ScannerException? _lastError;
+  double _stability = 0;
+  int _stableFrames = 0;
+  Future<NativeStatus>? _initialization;
+  StreamSubscription<ScannerEvent>? _nativeEvents;
 
   ScannerCameraState get state => _state;
+  ScannerDetectionState get detectionState => _detectionState;
   NativeStatus? get nativeStatus => _nativeStatus;
+  CameraPreviewInfo? get previewInfo => _previewInfo;
   DetectionResult? get lastDetection => _lastDetection;
+  CaptureResult? get lastCapture => _lastCapture;
+  ScannerDiagnostics? get diagnostics => _diagnostics;
+  ScannerException? get lastError => _lastError;
+  double get stability => _stability;
+  int get stableFrames => _stableFrames;
+  Stream<ScannerEvent> get events => _eventController.stream;
   bool get isDisposed => _state == ScannerCameraState.disposed;
 
-  Future<NativeStatus> initialize() async {
+  Future<NativeStatus> initialize() {
     _ensureNotDisposed();
     if (_state == ScannerCameraState.ready && _nativeStatus != null) {
-      return _nativeStatus!;
+      return Future<NativeStatus>.value(_nativeStatus);
     }
+    final Future<NativeStatus>? active = _initialization;
+    if (active != null) return active;
+
     _setState(ScannerCameraState.initializing);
-    try {
-      _nativeStatus = await _platform.initialize();
-      _setState(ScannerCameraState.ready);
-      return _nativeStatus!;
-    } catch (_) {
-      _setState(ScannerCameraState.uninitialized);
-      rethrow;
-    }
+    final Future<NativeStatus> operation = _platform.initialize().then(
+      (NativeStatus status) {
+        _ensureNotDisposed();
+        _nativeStatus = status;
+        _setState(ScannerCameraState.ready);
+        return status;
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!isDisposed) _setState(ScannerCameraState.uninitialized);
+        Error.throwWithStackTrace(error, stackTrace);
+      },
+    ).whenComplete(() => _initialization = null);
+    _initialization = operation;
+    return operation;
   }
 
   Future<NativeStatus> getNativeStatus() async {
@@ -81,7 +112,10 @@ final class DocumentScannerController extends ChangeNotifier {
           validated = ScannerCorners.validate(selected);
         } on FormatException catch (error) {
           throw ScannerException(
-              'INVALID_ARGUMENT', error.message, error.source);
+            'INVALID_ARGUMENT',
+            error.message,
+            error.source,
+          );
         }
         return _platform.cropDocument(
           imagePath,
@@ -90,25 +124,134 @@ final class DocumentScannerController extends ChangeNotifier {
         );
       });
 
-  Future<void> startPreview() => _unsupportedCamera('startPreview');
-  Future<void> stopPreview() => _unsupportedCamera('stopPreview');
-  Future<CaptureResult> capture() => _unsupportedCamera('capture');
-  Future<void> setFlashMode(ScannerFlashMode mode) =>
-      _unsupportedCamera('setFlashMode');
-  Future<void> setAutoCapture(bool enabled) =>
-      _unsupportedCamera('setAutoCapture');
+  Future<CropResult> applyFilter(
+    String imagePath,
+    String outputPath,
+    String filter, {
+    int jpegQuality = 92,
+  }) =>
+      _runReady(
+        () => _platform.applyFilter(
+          imagePath,
+          outputPath,
+          filter,
+          jpegQuality: jpegQuality,
+        ),
+      );
 
-  Future<T> _unsupportedCamera<T>(String operation) async {
+  Future<CameraPreviewInfo> startPreview() async {
     _ensureNotDisposed();
-    throw ScannerException(
-      'CAMERA_PHASE_NOT_IMPLEMENTED',
-      '$operation is reserved for the later live-camera phase',
-    );
+    if (_state == ScannerCameraState.uninitialized ||
+        _state == ScannerCameraState.initializing) {
+      await initialize();
+    }
+    if (_state == ScannerCameraState.previewing && _previewInfo != null) {
+      return _previewInfo!;
+    }
+    if (_state != ScannerCameraState.ready &&
+        _state != ScannerCameraState.paused) {
+      throw ScannerException(
+        'INVALID_STATE',
+        'Cannot start preview while scanner is ${_state.name}',
+      );
+    }
+    _ensureEventSubscription();
+    _lastError = null;
+    _setState(ScannerCameraState.starting);
+    try {
+      _previewInfo = await _platform.startPreview(options);
+      _ensureNotDisposed();
+      _setState(ScannerCameraState.previewing);
+      return _previewInfo!;
+    } catch (error) {
+      if (!isDisposed) _setState(ScannerCameraState.error);
+      rethrow;
+    }
+  }
+
+  Future<void> stopPreview() async {
+    _ensureNotDisposed();
+    if (_state == ScannerCameraState.ready) return;
+    await _platform.stopPreview();
+    _previewInfo = null;
+    _lastDetection = null;
+    _detectionState = ScannerDetectionState.searching;
+    _setState(ScannerCameraState.ready);
+  }
+
+  Future<void> pausePreview() async {
+    _ensureNotDisposed();
+    if (_state != ScannerCameraState.previewing) {
+      throw ScannerException(
+        'INVALID_STATE',
+        'Cannot pause preview while scanner is ${_state.name}',
+      );
+    }
+    await _platform.pausePreview();
+    _setState(ScannerCameraState.paused);
+  }
+
+  Future<CameraPreviewInfo> resumePreview() async {
+    _ensureNotDisposed();
+    if (_state != ScannerCameraState.paused) {
+      throw ScannerException(
+        'INVALID_STATE',
+        'Cannot resume preview while scanner is ${_state.name}',
+      );
+    }
+    _previewInfo = await _platform.resumePreview();
+    _setState(ScannerCameraState.previewing);
+    return _previewInfo!;
+  }
+
+  Future<CameraPreviewInfo> switchCamera() async {
+    _ensurePreviewing('switch camera');
+    _previewInfo = await _platform.switchCamera();
+    _lastDetection = null;
+    _detectionState = ScannerDetectionState.searching;
+    notifyListeners();
+    return _previewInfo!;
+  }
+
+  Future<CaptureResult> capture() async {
+    _ensurePreviewing('capture');
+    _setState(ScannerCameraState.capturing);
+    try {
+      final CaptureResult result = await _platform.capture();
+      _ensureNotDisposed();
+      _lastCapture = result;
+      return result;
+    } finally {
+      if (!isDisposed && _state == ScannerCameraState.capturing) {
+        _setState(ScannerCameraState.previewing);
+      }
+    }
+  }
+
+  Future<void> setFlashMode(ScannerFlashMode mode) async {
+    _ensurePreviewing('set flash');
+    await _platform.setFlashMode(mode);
+  }
+
+  Future<void> setAutoCapture(bool enabled) async {
+    _ensurePreviewing('set auto capture');
+    await _platform.setAutoCapture(enabled);
+  }
+
+  Future<ScannerDiagnostics> getDiagnostics() async {
+    _ensureNotDisposed();
+    final ScannerDiagnostics value = await _platform.getDiagnostics();
+    _diagnostics = value;
+    notifyListeners();
+    return value;
   }
 
   Future<T> _runReady<T>(Future<T> Function() operation) async {
     _ensureNotDisposed();
-    if (_state == ScannerCameraState.uninitialized) await initialize();
+    if (_state == ScannerCameraState.uninitialized ||
+        _state == ScannerCameraState.initializing) {
+      await initialize();
+    }
     if (_state != ScannerCameraState.ready) {
       throw ScannerException(
         'INVALID_STATE',
@@ -121,9 +264,71 @@ final class DocumentScannerController extends ChangeNotifier {
       _ensureNotDisposed();
       return value;
     } finally {
-      if (!isDisposed) {
-        _setState(ScannerCameraState.ready);
-      }
+      if (!isDisposed) _setState(ScannerCameraState.ready);
+    }
+  }
+
+  void _ensureEventSubscription() {
+    _nativeEvents ??= _platform.events.listen(
+      _handleNativeEvent,
+      onError: (Object error, StackTrace stackTrace) {
+        if (isDisposed) return;
+        _lastError = error is ScannerException
+            ? error
+            : ScannerException('NATIVE_EVENT_ERROR', '$error');
+        _detectionState = ScannerDetectionState.error;
+        _setState(ScannerCameraState.error);
+      },
+    );
+  }
+
+  void _handleNativeEvent(ScannerEvent event) {
+    if (isDisposed) return;
+    _detectionState = event.state;
+    _stability = event.stability;
+    _stableFrames = event.stableFrames;
+    if (event.detection != null) _lastDetection = event.detection;
+    if (event.type == ScannerEventType.documentLost) _lastDetection = null;
+    if (event.capture != null) _lastCapture = event.capture;
+    if (event.previewInfo != null) _previewInfo = event.previewInfo;
+    if (event.diagnostics != null) _diagnostics = event.diagnostics;
+
+    switch (event.type) {
+      case ScannerEventType.captureStarted:
+        _state = ScannerCameraState.capturing;
+      case ScannerEventType.captureCompleted:
+        if (_state != ScannerCameraState.processing) {
+          _state = ScannerCameraState.previewing;
+        }
+      case ScannerEventType.processingStarted:
+        _state = ScannerCameraState.processing;
+      case ScannerEventType.processingCompleted:
+        _state = ScannerCameraState.previewing;
+      case ScannerEventType.error:
+        _lastError = ScannerException(
+          event.errorCode ?? 'NATIVE_EVENT_ERROR',
+          event.errorMessage ?? 'Native scanner event failed',
+        );
+        _state = ScannerCameraState.error;
+      case ScannerEventType.cameraState:
+      case ScannerEventType.documentDetected:
+      case ScannerEventType.documentLost:
+      case ScannerEventType.stabilityChanged:
+      case ScannerEventType.autoCaptureProgress:
+      case ScannerEventType.diagnostics:
+        break;
+    }
+    _eventController.add(event);
+    notifyListeners();
+  }
+
+  void _ensurePreviewing(String operation) {
+    _ensureNotDisposed();
+    if (_state != ScannerCameraState.previewing) {
+      throw ScannerException(
+        'INVALID_STATE',
+        'Cannot $operation while scanner is ${_state.name}',
+      );
     }
   }
 
@@ -145,9 +350,12 @@ final class DocumentScannerController extends ChangeNotifier {
     if (isDisposed) return;
     _state = ScannerCameraState.disposed;
     notifyListeners();
+    await _nativeEvents?.cancel();
+    _nativeEvents = null;
     try {
       await _platform.dispose();
     } finally {
+      await _eventController.close();
       super.dispose();
     }
   }
@@ -156,7 +364,10 @@ final class DocumentScannerController extends ChangeNotifier {
   void dispose() {
     if (isDisposed) return;
     _state = ScannerCameraState.disposed;
+    unawaited(_nativeEvents?.cancel());
+    _nativeEvents = null;
     unawaited(_platform.dispose());
+    unawaited(_eventController.close());
     super.dispose();
   }
 }

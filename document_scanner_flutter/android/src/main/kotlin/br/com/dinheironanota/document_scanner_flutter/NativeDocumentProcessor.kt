@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.File
 import java.io.FileNotFoundException
+import java.nio.ByteBuffer
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -102,6 +103,72 @@ internal class NativeDocumentProcessor {
         }
     }
 
+    fun applyFilter(
+        sourcePath: String,
+        outputPath: String,
+        filter: String,
+        outputFormat: String,
+        jpegQuality: Int,
+    ): Map<String, Any> {
+        require(filter in SUPPORTED_FILTERS) { "Unsupported filter: $filter" }
+        val source = OrientedBitmapDecoder.decode(sourcePath)
+        try {
+            val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+            try {
+                nativeApplyFilter(source, filter, output)
+                val outputFile = File(outputPath)
+                outputFile.parentFile?.mkdirs()
+                val format = if (outputFormat == "png") {
+                    Bitmap.CompressFormat.PNG
+                } else {
+                    Bitmap.CompressFormat.JPEG
+                }
+                outputFile.outputStream().use { stream ->
+                    check(output.compress(format, jpegQuality.coerceIn(1, 100), stream)) {
+                        "Unable to encode filtered image"
+                    }
+                }
+                return mapOf(
+                    "path" to outputFile.absolutePath,
+                    "width" to output.width,
+                    "height" to output.height,
+                )
+            } finally {
+                output.recycle()
+            }
+        } finally {
+            source.recycle()
+        }
+    }
+
+    fun detectFrame(
+        width: Int,
+        height: Int,
+        chromaPixelStride: Int,
+        yBuffer: ByteBuffer,
+        yRowStride: Int,
+        uBuffer: ByteBuffer,
+        uRowStride: Int,
+        vBuffer: ByteBuffer,
+        vRowStride: Int,
+        rotationDegrees: Int,
+        resizeThreshold: Int,
+        areaScaleMinFactor: Double,
+    ): DoubleArray? = nativeDetectYuv(
+        width,
+        height,
+        chromaPixelStride,
+        yBuffer,
+        yRowStride,
+        uBuffer,
+        uRowStride,
+        vBuffer,
+        vRowStride,
+        rotationDegrees,
+        resizeThreshold,
+        areaScaleMinFactor,
+    )
+
     private external fun nativeDetect(
         sourceBitmap: Bitmap,
         resizeThreshold: Int,
@@ -114,6 +181,27 @@ internal class NativeDocumentProcessor {
         outputBitmap: Bitmap,
     )
 
+    private external fun nativeApplyFilter(
+        sourceBitmap: Bitmap,
+        filter: String,
+        outputBitmap: Bitmap,
+    )
+
+    private external fun nativeDetectYuv(
+        width: Int,
+        height: Int,
+        chromaPixelStride: Int,
+        yBuffer: ByteBuffer,
+        yRowStride: Int,
+        uBuffer: ByteBuffer,
+        uRowStride: Int,
+        vBuffer: ByteBuffer,
+        vRowStride: Int,
+        rotationDegrees: Int,
+        resizeThreshold: Int,
+        areaScaleMinFactor: Double,
+    ): DoubleArray?
+
     private data class PixelPoint(val x: Double, val y: Double)
 
     private fun distance(first: PixelPoint, second: PixelPoint): Double =
@@ -121,6 +209,10 @@ internal class NativeDocumentProcessor {
 
     private fun Map<String, Any?>?.number(name: String, fallback: Double): Double =
         (this?.get(name) as? Number)?.toDouble() ?: fallback
+
+    private companion object {
+        val SUPPORTED_FILTERS = setOf("original", "grayscale", "highContrast", "colorBoost")
+    }
 }
 
 internal object OrientedBitmapDecoder {

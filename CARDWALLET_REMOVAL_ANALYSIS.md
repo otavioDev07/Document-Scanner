@@ -1,89 +1,39 @@
-# Análise para remoção futura do CardWallet
+# Registro da remoção do produto CardWallet
 
-## Decisão
+Executado em 21 de julho de 2026 após migração do núcleo compartilhado e autorização explícita do usuário.
 
-CardWallet não foi removido nesta entrega. A análise mostra que uma exclusão imediata por diretório seria insegura porque o produto é selecionado por ambiente e compartilha módulos com Document Scanner.
+## Preservado antes da exclusão
 
-## Inventário exclusivo de CardWallet
+- detector de documentos e parâmetros C++;
+- perspectiva e processamento OpenCV;
+- câmera CameraX/AVFoundation e adaptação de buffers;
+- assets de ícone do Document Scanner;
+- PDF, persistência e compartilhamento, reimplementados no app Flutter.
 
-Revalidar nomes com `rg` antes de apagar, pois a árvore pode evoluir.
+O código preservado foi centralizado em `document_scanner_flutter/`, especialmente `native/`, `android/`, `ios/` e `example/lib/`.
 
-### UI e navegação
+## Removido
 
-- raiz/lista de cartões (`CardsList`);
-- visualização e edição (`CardView`, `PKPassView`, criação de cartão);
-- componentes específicos de campos, código de barras/QR, paletas e passes;
-- branch CardWallet em `app.ts` e constantes condicionais do Webpack.
+- flavor, IDs, manifests, recursos e metadados CardWallet;
+- telas/modelos de cartões, passes e QR;
+- variáveis `.env` e scripts de seleção de produto;
+- `App_Resources/`, app NativeScript/Svelte e plugins locais;
+- Webpack, package manager JavaScript, TypeScript e configurações associadas;
+- Fastlane/workflows de publicação e diretórios órfãos.
 
-### Domínio e persistência
+## Verificação
 
-- classe/modelo `PKPass`;
-- tabela/migrações `PKPass`;
-- campos/relacionamentos `pkpass_id`;
-- importadores PKPass/ESPass e parsing específico;
-- tipos MIME, UTI e intent filters de passes.
+- busca residual em fonte/configuração executável: nenhuma ocorrência;
+- `flutter analyze` plugin e app: aprovado;
+- testes Flutter: 15 + 4 aprovados;
+- testes JVM: 3 aprovados;
+- APK Android debug reconstruído com sucesso;
+- pacote nativo iOS compilado e Swift typechecked.
 
-### Nativo
+Termos do produto removido permanecem somente neste registro e nos documentos históricos de auditoria, para rastreabilidade da decisão.
 
-- flag `WITH_QRCODE`;
-- integração ZXing e submódulo `zxingcpp`, se nenhuma outra feature usar QR;
-- métodos QR no `plugin-nativeprocessor`;
-- variantes/AARs com sufixo de CardWallet.
+## Risco de upgrade
 
-### Produto e distribuição
+O novo app usa biblioteca de arquivos/JSON e não implementa importação automática do banco SQLite da instalação NativeScript. Portanto, upgrade sobre uma instalação antiga com dados existentes exige uma migração de dados dedicada antes de distribuição aos usuários. Isso não afeta uma instalação limpa nem a recuperação interna da nova biblioteca.
 
-- `.env.ci.cardwallet`;
-- `App_Resources/cardwallet/`;
-- fastlane, screenshots, ícones, gráficos e metadata CardWallet;
-- workflows/matrizes de publicação do flavor CardWallet;
-- IDs `com.akylas.cardwallet` e App Store ID correspondente;
-- documentação/site e traduções exclusivamente CardWallet.
-
-## O que deve permanecer
-
-- câmera, detector OpenCV, recorte e editor de cantos;
-- OCR de documentos e Tesseract enquanto usados pelo scanner;
-- banco/armazenamento de documentos;
-- sincronização, arquivos, PDF e exportação usados pelo Document Scanner;
-- componentes visuais compartilhados;
-- scripts de build genéricos;
-- `plugin-nativeprocessor` até todas as chamadas do scanner serem substituídas.
-
-## Dependências transitivas a confirmar
-
-Antes de cada remoção:
-
-```bash
-rg -n "CardWallet|PKPass|ESPass|WITH_QRCODE|ZXing|pkpass_id" \
-  app plugin-nativeprocessor App_Resources scripts .github fastlane docs-site
-```
-
-Também verificar imports dinâmicos, tabelas criadas por string, MIME/UTI e nomes interpolados pelo Webpack.
-
-## Ordem segura
-
-1. Criar branch isolada depois que o plugin Flutter substituir o fluxo necessário.
-2. Remover a entrada CardWallet das matrizes CI/release para impedir publicação acidental.
-3. Remover `app.ts`/Webpack flavor branch e variáveis CardWallet.
-4. Remover telas/componentes exclusivos e corrigir imports.
-5. Criar migração de banco explícita; nunca apenas apagar a classe `PKPass`.
-6. Remover MIME/UTI/intent filters e recursos CardWallet.
-7. Remover QR/ZXing somente se uma busca e testes confirmarem zero uso pelo scanner.
-8. Remover assets, Fastlane e documentação do produto.
-9. Rodar build/test Android e iOS Document Scanner em clone limpo.
-10. Validar upgrade sobre um banco real que já contenha dados CardWallet/Document Scanner.
-
-## Checklist de aceitação
-
-- [ ] Document Scanner inicia sem qualquer variável CardWallet.
-- [ ] Importação, câmera, detecção, crop, OCR, PDF, sync e banco continuam funcionais.
-- [ ] Não há referência a `PKPass`, `WITH_QRCODE` ou IDs CardWallet no artefato final.
-- [ ] Migrações de banco foram testadas em install novo e upgrade.
-- [ ] Manifest/Info.plist não anunciam MIME/UTI removidos.
-- [ ] APK/AAB e IPA não carregam ZXing/QR sem necessidade.
-- [ ] Matriz de CI publica apenas o produto pretendido.
-- [ ] Fastlane e credenciais antigas foram rotacionados/arquivados fora do repositório.
-
-## Rollback
-
-Não misturar a remoção CardWallet com a migração do detector. Faça um commit/PR dedicado e preserve uma tag da última versão dual-flavor. Se uma dependência compartilhada for descoberta, reverta apenas a etapa afetada, extraia uma interface comum e repita.
+O application ID e o bundle ID do Document Scanner foram preservados como `com.akylas.documentscanner`.

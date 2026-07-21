@@ -1,2 +1,0 @@
-Bug fixes:
-- some OCR languages were "empty" thus letting the user think that language was not available

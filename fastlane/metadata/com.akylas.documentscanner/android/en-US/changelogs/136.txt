@@ -1,3 +1,0 @@
-Bug fixes:
-- remove unwanted added permissions
-- error while trying to share documents

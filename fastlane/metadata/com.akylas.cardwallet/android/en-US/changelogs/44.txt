@@ -1,5 +1,0 @@
-Features:
-- you can now select a color on a per card page basis. This means transparent images (logos) are accepted and you can set a color.
-
-Bug fixes:
-- Translations update

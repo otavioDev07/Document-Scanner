@@ -1,12 +1,16 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'document_scanner_flutter_method_channel.dart';
+import 'src/models/camera_preview_info.dart';
 import 'src/models/capture_result.dart';
 import 'src/models/crop_result.dart';
 import 'src/models/detection_result.dart';
 import 'src/models/native_status.dart';
 import 'src/models/scanner_options.dart';
 import 'src/models/scanner_point.dart';
+import 'src/models/scanner_camera_state.dart';
+import 'src/models/scanner_diagnostics.dart';
+import 'src/models/scanner_event.dart';
 
 abstract class DocumentScannerFlutterPlatform extends PlatformInterface {
   DocumentScannerFlutterPlatform() : super(token: _token);
@@ -34,5 +38,21 @@ abstract class DocumentScannerFlutterPlatform extends PlatformInterface {
     List<ScannerPoint> corners,
     ScannerOptions options,
   );
+  Future<CropResult> applyFilter(
+    String imagePath,
+    String outputPath,
+    String filter, {
+    int jpegQuality = 92,
+  });
+  Stream<ScannerEvent> get events;
+  Future<CameraPreviewInfo> startPreview(ScannerOptions options);
+  Future<void> stopPreview();
+  Future<void> pausePreview();
+  Future<CameraPreviewInfo> resumePreview();
+  Future<CameraPreviewInfo> switchCamera();
+  Future<void> setFlashMode(ScannerFlashMode mode);
+  Future<void> setAutoCapture(bool enabled);
+  Future<CaptureResult> capture();
+  Future<ScannerDiagnostics> getDiagnostics();
   Future<void> dispose();
 }
