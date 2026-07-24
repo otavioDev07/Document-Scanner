@@ -163,7 +163,7 @@ final class BackupService {
       path.join(extracted.path, 'backup_manifest.json'),
     );
     if (!await manifest.exists()) {
-      throw const FormatException('This is not an OSS Document Scanner backup');
+      throw const FormatException('This is not a Document Scanner backup');
     }
     final Object? decoded = jsonDecode(await manifest.readAsString());
     if (decoded is! Map ||

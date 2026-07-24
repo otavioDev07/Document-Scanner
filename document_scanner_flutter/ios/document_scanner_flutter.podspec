@@ -7,11 +7,11 @@ Pod::Spec.new do |s|
   s.version          = '0.2.0'
   s.summary          = 'Reusable Flutter document detection and perspective crop plugin.'
   s.description      = <<-DESC
-Flutter extraction of the OSS DocumentScanner native processing pipeline.
+Flutter document scanner with a native image-processing pipeline.
                        DESC
-  s.homepage         = 'https://github.com/Akylas/OSS-DocumentScanner'
+  s.homepage         = 'https://github.com/otavioDev07/Document-Scanner'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'OSS DocumentScanner contributors' => 'opensource@example.invalid' }
+  s.author           = { 'Document Scanner contributors' => 'opensource@example.invalid' }
   s.source           = { :path => '.' }
   s.source_files = [
     'document_scanner_flutter/Sources/document_scanner_flutter/**/*.{swift}',

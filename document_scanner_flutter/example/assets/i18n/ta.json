@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "OSS ஆவண ச்கேனர்"
+    "name": "Document Scanner"
   },
   "documents": "ஆவணங்கள்",
   "documents_count": "%1$s ஆவணங்கள்",

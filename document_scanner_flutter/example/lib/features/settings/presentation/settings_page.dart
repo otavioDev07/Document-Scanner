@@ -91,7 +91,7 @@ class SettingsPage extends StatelessWidget {
               ),
               const Divider(),
               const AboutListTile(
-                applicationName: 'OSS Document Scanner',
+                applicationName: 'Document Scanner',
                 applicationVersion: '0.2.0',
                 applicationLegalese: 'Software livre',
               ),

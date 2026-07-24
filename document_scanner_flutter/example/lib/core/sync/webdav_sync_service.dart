@@ -9,7 +9,7 @@ final class WebDavConfiguration {
   const WebDavConfiguration({
     required this.serverUrl,
     required this.username,
-    this.remoteDirectory = 'OSS-DocumentScanner',
+    this.remoteDirectory = 'Document-Scanner',
   });
 
   final String serverUrl;

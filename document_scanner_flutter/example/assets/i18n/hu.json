@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "OSS dokumentumszkenner"
+    "name": "Document Scanner"
   },
   "documents": "Dokumentumok",
   "documents_count": "%1$s dokumentum",

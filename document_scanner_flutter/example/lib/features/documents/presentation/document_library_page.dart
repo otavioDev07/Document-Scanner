@@ -110,7 +110,7 @@ class _DocumentLibraryPageState extends State<DocumentLibraryPage> {
           children: <Widget>[
             const Padding(
               padding: EdgeInsets.fromLTRB(28, 24, 16, 12),
-              child: Text('OSS Document Scanner'),
+              child: Text('Document Scanner'),
             ),
             NavigationDrawerDestination(
               icon: const Icon(Icons.description_outlined),

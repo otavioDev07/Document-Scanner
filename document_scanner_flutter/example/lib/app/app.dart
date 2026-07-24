@@ -7,8 +7,8 @@ import '../features/documents/application/document_library_controller.dart';
 import '../features/documents/presentation/document_library_page.dart';
 import '../features/settings/application/scanner_settings_controller.dart';
 
-class OssDocumentScannerApp extends StatefulWidget {
-  const OssDocumentScannerApp({
+class DocumentScannerApp extends StatefulWidget {
+  const DocumentScannerApp({
     super.key,
     this.documentController,
     this.settingsController,
@@ -18,10 +18,10 @@ class OssDocumentScannerApp extends StatefulWidget {
   final ScannerSettingsController? settingsController;
 
   @override
-  State<OssDocumentScannerApp> createState() => _OssDocumentScannerAppState();
+  State<DocumentScannerApp> createState() => _DocumentScannerAppState();
 }
 
-class _OssDocumentScannerAppState extends State<OssDocumentScannerApp> {
+class _DocumentScannerAppState extends State<DocumentScannerApp> {
   late final DocumentLibraryController _documents =
       widget.documentController ??
       DocumentLibraryController(repository: DocumentRepository());
@@ -69,7 +69,7 @@ class _OssDocumentScannerAppState extends State<OssDocumentScannerApp> {
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
-    title: 'OSS Document Scanner',
+    title: 'Document Scanner',
     locale: _localeId == null
         ? null
         : LegacyLocalizations.localeFromId(_localeId!),

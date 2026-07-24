@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Fri dokumentskanner"
+    "name": "Document Scanner"
   },
   "documents": "dokumenter",
   "documents_count": "%1$s dokumenter",

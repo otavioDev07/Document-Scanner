@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "OSS Belge Tarayıcı"
+    "name": "Document Scanner"
   },
   "documents": "belgeler",
   "documents_count": "%1$s belge",

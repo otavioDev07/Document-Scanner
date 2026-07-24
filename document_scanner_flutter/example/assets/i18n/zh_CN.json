@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "开源文件扫描器"
+    "name": "Document Scanner"
   },
   "documents": "文档",
   "documents_count": "%1$s个文件",

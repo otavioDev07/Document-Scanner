@@ -1,4 +1,4 @@
-# OSS Document Scanner
+# Document Scanner
 
 Aplicativo Flutter para digitalizar, recortar, organizar e compartilhar documentos no Android e iOS. A interface é compartilhada em Flutter, enquanto câmera, detecção de quadriláteros, recorte em perspectiva e filtros usam implementações nativas com OpenCV.
 
@@ -33,8 +33,8 @@ O projeto original e os componentes derivados são utilizados conforme os termos
 ## Executar o projeto
 
 ```bash
-git clone https://github.com/otavioDev07/OSS-DocumentScanner.git
-cd OSS-DocumentScanner/document_scanner_flutter
+git clone https://github.com/otavioDev07/Document-Scanner.git
+cd Document-Scanner/document_scanner_flutter
 flutter pub get
 
 cd example

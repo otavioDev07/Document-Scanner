@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "OSS-asiakirjaskanneri"
+    "name": "Document Scanner"
   },
   "documents": "dokumentit",
   "documents_count": "%1$s asiakirjaa",

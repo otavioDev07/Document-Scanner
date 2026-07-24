@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "OSS 文件掃描器"
+    "name": "Document Scanner"
   },
   "documents": "文件",
   "documents_count": "%1$s 個文件",

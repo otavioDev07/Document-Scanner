@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "پویش‌گر اسناد OSS"
+    "name": "Document Scanner"
   },
   "documents": "اسناد",
   "documents_count": "%1$s سند",

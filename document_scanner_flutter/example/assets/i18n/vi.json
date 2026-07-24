@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Trình quét tài liệu OSS"
+    "name": "Document Scanner"
   },
   "documents": "tài liệu",
   "documents_count": "%1$s tài liệu",

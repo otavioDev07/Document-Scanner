@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "סורק מסמכים OSS"
+    "name": "Document Scanner"
   },
   "documents": "מסמכים",
   "documents_count": "%1$s מסמכים",

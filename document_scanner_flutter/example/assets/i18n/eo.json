@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Liberfontkoda Dokumento-skanilo"
+    "name": "Document Scanner"
   },
   "documents": "Dokumentoj",
   "documents_count": "%1$s dokumentoj",

@@ -20,8 +20,8 @@ final class PdfExportService {
     }
     final pw.Document pdf = pw.Document(
       title: document.name,
-      author: 'OSS Document Scanner',
-      creator: 'OSS Document Scanner Flutter',
+      author: 'Document Scanner',
+      creator: 'Document Scanner',
     );
     for (final ScannedPage page in document.pages) {
       final File file = await _repository.pageFile(document, page);

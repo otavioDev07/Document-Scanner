@@ -14,7 +14,7 @@ final class DocumentShareService {
     ShareParams(
       subject: documentName,
       title: documentName,
-      text: 'Digitalizado com OSS Document Scanner',
+      text: 'Digitalizado com Document Scanner',
       files: <XFile>[XFile(pdf.path, mimeType: 'application/pdf')],
       sharePositionOrigin: sharePositionOrigin,
     ),
