@@ -1,0 +1,25 @@
+{
+  "app": {
+    "name": "OSS dokumentumszkenner"
+  },
+  "documents": "Dokumentumok",
+  "documents_count": "%1$s dokumentum",
+  "autoscan": "Automatikus leolvasás",
+  "backup_restore": "Biztonsági mentés / helyreállítás",
+  "data_sync": "Alkalmazásadatok szinkronizálása",
+  "data_sync_desc": "az alkalmazás adatainak szinkronizálása, így az alkalmazást több eszközön is használhatja",
+  "biometric_lock": "Biometrikus biztonság",
+  "biometric_lock_desc": "Az alkalmazás lezárása biometrikus adatokkal / PIN-kóddal",
+  "biometric_auto_lock": "biometrikus automatikus zár",
+  "biometric_auto_lock_desc": "ha engedélyezve van, az alkalmazás zárolja, amikor az alkalmazás a háttérbe kerül",
+  "cancel": "Mégse",
+  "delete": "Törlés",
+  "share": "megosztás",
+  "export": "Exportálás",
+  "camera": "Kamera",
+  "delete_page": "Törlés",
+  "camera_permission_needed": "a kamera engedélye szükséges a fényképezéshez",
+  "error": "Hiba",
+  "share_images": "képek megosztása",
+  "auto_sync": "Automatikus szinkronizálás"
+}

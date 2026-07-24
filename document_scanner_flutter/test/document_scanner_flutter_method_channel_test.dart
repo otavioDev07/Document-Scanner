@@ -42,6 +42,20 @@ void main() {
             'width': 640,
             'height': 480,
           },
+        'recognizeText' => <String, Object>{
+            'text': 'Total 42.00',
+            'blocks': <Object>[
+              <String, Object>{
+                'text': 'Total 42.00',
+                'left': .1,
+                'top': .2,
+                'width': .4,
+                'height': .1,
+              },
+            ],
+            'languages': <String>['en'],
+            'durationMilliseconds': 21,
+          },
         _ => null,
       },
     );
@@ -58,6 +72,10 @@ void main() {
       'grayscale',
     );
     expect(filtered.width, 640);
+    final OcrResult ocr = await platform.recognizeText('/tmp/a.jpg');
+    expect(ocr.text, 'Total 42.00');
+    expect(ocr.blocks.single.left, .1);
+    expect(ocr.languages, <String>['en']);
   });
 
   test('turns malformed native payloads into typed exceptions', () async {

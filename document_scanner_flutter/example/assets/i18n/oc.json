@@ -1,0 +1,33 @@
+{
+  "app": {
+    "name": "Numerizador de documents OSS"
+  },
+  "documents": "documents",
+  "documents_count": "%1$s documents",
+  "folders": "dossièrs",
+  "folder": "dossièr",
+  "settings": {
+    "title": "paramètres"
+  },
+  "search": "cercar",
+  "scan": "numerizar",
+  "backup_restore": "salvagarda / restauracion",
+  "security": "seguretat",
+  "security_settings": "paramètres de seguretat",
+  "cancel": "anullar",
+  "save": "salvar",
+  "delete": "suprimir",
+  "rename": "renomenar",
+  "share": "partejar",
+  "export": "exportar",
+  "language": "lenga",
+  "languages": "lengas",
+  "select_language": "seleccionar la lenga",
+  "quality": "qualitat",
+  "jpeg_quality": "Qualitat JPEG",
+  "camera": "Camèra",
+  "delete_page": "suprimir",
+  "error": "error",
+  "share_images": "partejar los imatges",
+  "local_folder": "dossièr local"
+}

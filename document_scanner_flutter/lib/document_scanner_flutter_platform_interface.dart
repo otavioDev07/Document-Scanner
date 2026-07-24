@@ -6,6 +6,7 @@ import 'src/models/capture_result.dart';
 import 'src/models/crop_result.dart';
 import 'src/models/detection_result.dart';
 import 'src/models/native_status.dart';
+import 'src/models/ocr_result.dart';
 import 'src/models/scanner_options.dart';
 import 'src/models/scanner_point.dart';
 import 'src/models/scanner_camera_state.dart';
@@ -43,6 +44,10 @@ abstract class DocumentScannerFlutterPlatform extends PlatformInterface {
     String outputPath,
     String filter, {
     int jpegQuality = 92,
+  });
+  Future<OcrResult> recognizeText(
+    String imagePath, {
+    List<String> languages = const <String>[],
   });
   Stream<ScannerEvent> get events;
   Future<CameraPreviewInfo> startPreview(ScannerOptions options);

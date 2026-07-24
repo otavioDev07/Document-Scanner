@@ -4,6 +4,7 @@ import '../document_scanner_controller.dart';
 import '../models/camera_preview_info.dart';
 import '../models/detection_result.dart';
 import '../models/scanner_event.dart';
+import '../models/scanner_point.dart';
 import 'document_overlay.dart';
 
 /// Composes the native camera Texture and the Flutter document overlay.
@@ -39,19 +40,30 @@ class DocumentScannerPreview extends StatelessWidget {
               else
                 child ?? const ColoredBox(color: Colors.black),
               if (current?.corners != null)
-                DocumentOverlay(
-                  corners: current!.corners!,
-                  sourceSize: Size(
-                    current.imageWidth.toDouble(),
-                    current.imageHeight.toDouble(),
+                TweenAnimationBuilder<List<ScannerPoint>>(
+                  tween: _ScannerCornersTween(end: current!.corners!),
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOut,
+                  builder: (
+                    BuildContext context,
+                    List<ScannerPoint> corners,
+                    Widget? child,
+                  ) =>
+                      DocumentOverlay(
+                    corners: corners,
+                    sourceSize: Size(
+                      current.imageWidth.toDouble(),
+                      current.imageHeight.toDouble(),
+                    ),
+                    rotationDegrees: current.rotationDegrees,
+                    mirrored: current.mirrored,
+                    fit: fit,
+                    borderColor: _stateColor(controller.detectionState),
+                    fillColor: _stateColor(
+                      controller.detectionState,
+                    ).withAlpha(28),
+                    handleRadius: 0,
                   ),
-                  rotationDegrees: current.rotationDegrees,
-                  mirrored: current.mirrored,
-                  fit: fit,
-                  borderColor: _stateColor(controller.detectionState),
-                  fillColor:
-                      _stateColor(controller.detectionState).withAlpha(28),
-                  handleRadius: 0,
                 ),
               if (controller.detectionState ==
                       ScannerDetectionState.stabilizing ||
@@ -83,6 +95,24 @@ class DocumentScannerPreview extends StatelessWidget {
         ScannerDetectionState.lost =>
           Colors.white54,
       };
+}
+
+final class _ScannerCornersTween extends Tween<List<ScannerPoint>> {
+  _ScannerCornersTween({required super.end});
+
+  @override
+  List<ScannerPoint> lerp(double t) {
+    final List<ScannerPoint> target = end!;
+    final List<ScannerPoint> source = begin ?? target;
+    return List<ScannerPoint>.generate(
+      target.length,
+      (int index) => ScannerPoint(
+        source[index].x + (target[index].x - source[index].x) * t,
+        source[index].y + (target[index].y - source[index].y) * t,
+      ),
+      growable: false,
+    );
+  }
 }
 
 class _NativeTexturePreview extends StatelessWidget {

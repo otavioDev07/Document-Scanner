@@ -7,6 +7,7 @@ import 'src/models/capture_result.dart';
 import 'src/models/crop_result.dart';
 import 'src/models/detection_result.dart';
 import 'src/models/native_status.dart';
+import 'src/models/ocr_result.dart';
 import 'src/models/scanner_exception.dart';
 import 'src/models/scanner_camera_state.dart';
 import 'src/models/scanner_diagnostics.dart';
@@ -108,6 +109,20 @@ class MethodChannelDocumentScannerFlutter
           'jpegQuality': jpegQuality,
         },
         parser: CropResult.fromMap,
+      );
+
+  @override
+  Future<OcrResult> recognizeText(
+    String imagePath, {
+    List<String> languages = const <String>[],
+  }) =>
+      _invoke(
+        'recognizeText',
+        arguments: <String, Object>{
+          'imagePath': imagePath,
+          'languages': languages,
+        },
+        parser: OcrResult.fromMap,
       );
 
   @override

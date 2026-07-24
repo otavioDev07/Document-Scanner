@@ -5,13 +5,19 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -92,6 +98,9 @@ class DocumentScannerFlutterPlugin :
                         .coerceIn(1, 100),
                 )
             }
+            "recognizeText" -> runAsync(result) {
+                recognizeText(requiredPath(call))
+            }
             "startPreview" -> startPreview(call, result)
             "stopPreview" -> cameraCommand(result) {
                 cameraSession?.stop()
@@ -141,6 +150,42 @@ class DocumentScannerFlutterPlugin :
         "staticImageSupported" to true,
         "cameraPreviewSupported" to true,
     )
+
+    private fun recognizeText(imagePath: String): Map<String, Any> {
+        val startedAt = SystemClock.elapsedRealtime()
+        val file = File(imagePath)
+        if (!file.exists()) throw FileNotFoundException(imagePath)
+        val decoded = BitmapFactory.decodeFile(imagePath)
+            ?: throw IllegalArgumentException("Image could not be decoded")
+        val bitmap = ExifOrientation.apply(file, decoded)
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        return try {
+            val recognized = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)))
+            val imageWidth = bitmap.width.toDouble().coerceAtLeast(1.0)
+            val imageHeight = bitmap.height.toDouble().coerceAtLeast(1.0)
+            val languages = linkedSetOf<String>()
+            val blocks = recognized.textBlocks.map { block ->
+                block.lines.mapTo(languages) { it.recognizedLanguage }
+                val bounds = block.boundingBox
+                mapOf(
+                    "text" to block.text,
+                    "left" to ((bounds?.left ?: 0) / imageWidth).coerceIn(0.0, 1.0),
+                    "top" to ((bounds?.top ?: 0) / imageHeight).coerceIn(0.0, 1.0),
+                    "width" to ((bounds?.width() ?: 0) / imageWidth).coerceIn(0.0, 1.0),
+                    "height" to ((bounds?.height() ?: 0) / imageHeight).coerceIn(0.0, 1.0),
+                )
+            }
+            mapOf(
+                "text" to recognized.text,
+                "blocks" to blocks,
+                "languages" to languages.filter { it.isNotBlank() },
+                "durationMilliseconds" to SystemClock.elapsedRealtime() - startedAt,
+            )
+        } finally {
+            recognizer.close()
+            bitmap.recycle()
+        }
+    }
 
     private fun startPreview(call: MethodCall, result: MethodChannel.Result) {
         val activity = activityBinding?.activity

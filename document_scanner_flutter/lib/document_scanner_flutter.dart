@@ -7,6 +7,7 @@ export 'src/models/capture_result.dart';
 export 'src/models/crop_result.dart';
 export 'src/models/detection_result.dart';
 export 'src/models/native_status.dart';
+export 'src/models/ocr_result.dart';
 export 'src/models/scanner_camera_state.dart';
 export 'src/models/scanner_corners.dart';
 export 'src/models/scanner_diagnostics.dart';

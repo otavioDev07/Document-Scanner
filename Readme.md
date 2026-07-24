@@ -1,78 +1,87 @@
-# OSS Document Scanner — Flutter
+# OSS Document Scanner
 
-Aplicativo Flutter para digitalizar, recortar, organizar, exportar e compartilhar documentos. A interface e a lógica de produto estão em Flutter; câmera, detecção contínua e processamento OpenCV permanecem nativos.
+Aplicativo Flutter para digitalizar, recortar, organizar e compartilhar documentos no Android e iOS. A interface é compartilhada em Flutter, enquanto câmera, detecção de quadriláteros, recorte em perspectiva e filtros usam implementações nativas com OpenCV.
+
+## Recursos
+
+- Captura automática com detecção e estabilização do documento.
+- Captura manual e importação da galeria.
+- Documentos com múltiplas páginas, favoritos e lixeira.
+- Filtros de imagem, rotação e visualização em tela cheia.
+- OCR local com ML Kit no Android e Vision no iOS.
+- Pesquisa no texto reconhecido, exportação em PDF e compartilhamento.
+- Interface disponível nos 38 idiomas preservados do projeto original.
 
 ## Estrutura
 
-- `document_scanner_flutter/`: plugin Flutter e núcleo compartilhado C++/OpenCV.
-- `document_scanner_flutter/example/`: aplicativo completo e executável do OSS Document Scanner.
-- `document_scanner_flutter/native/`: detector compartilhado, integração Objective-C++ e pacote Swift nativo.
-- `MIGRATION_PROGRESS.md`: estado verificável da migração.
-- `FEATURE_PARITY.md`: matriz de paridade e testes.
+- `document_scanner_flutter/`: plugin Flutter e API pública do scanner.
+- `document_scanner_flutter/native/`: detector compartilhado em C++/OpenCV.
+- `document_scanner_flutter/example/`: aplicativo completo que deve ser executado e distribuído.
 
-O diretório `example/` segue a convenção de plugins Flutter, mas é o aplicativo distribuível completo: biblioteca de documentos, câmera, importação, editor de recorte, filtros nativos, páginas, PDF, compartilhamento e configurações.
+## Requisitos
 
-## Executar
+- Flutter 3.44.7 ou compatível e Dart 3.12 ou superior.
+- Java 17, Android SDK e NDK para Android.
+- macOS com Xcode para compilar ou instalar no iOS.
 
-Requer Flutter 3.44.7 ou compatível, Android SDK/NDK e, para iOS, macOS com Xcode e um runtime de simulador instalado.
+## Executar o projeto
 
 ```bash
-cd document_scanner_flutter
+git clone https://github.com/otavioDev07/OSS-DocumentScanner.git
+cd OSS-DocumentScanner/document_scanner_flutter
 flutter pub get
 
 cd example
 flutter pub get
-flutter run
-```
-
-Para selecionar um destino explicitamente:
-
-```bash
 flutter devices
 flutter run -d <device-id>
 ```
 
-## Validar
-
-```bash
-cd document_scanner_flutter
-dart format --output=none --set-exit-if-changed .
-flutter analyze
-flutter test
-
-cd example
-flutter analyze
-flutter test
-flutter build apk --debug
-```
-
-### iOS
-
-O framework OpenCV para iOS não é versionado por causa do tamanho. Prepare-o uma vez:
+No Android, ative **Opções do desenvolvedor > Depuração USB** e autorize o computador. No iOS, prepare primeiro o OpenCV:
 
 ```bash
 cd document_scanner_flutter
 ./tool/bootstrap_ios.sh
 
 cd example
-flutter build ios --simulator --debug
+open ios/Runner.xcworkspace
 ```
 
-Nenhuma assinatura ou configuração de publicação é necessária para os builds de desenvolvimento.
+No Xcode, selecione o target `Runner`, escolha o Apple Developer Team, defina um Bundle Identifier pertencente à equipe e execute no iPhone. Depois da primeira configuração de assinatura, também é possível usar `flutter run`.
 
-## Arquitetura do scanner
+## Gerar e instalar o APK debug
+
+```bash
+cd document_scanner_flutter/example
+flutter build apk --debug
+```
+
+O APK será criado em:
 
 ```text
-CameraX / AVFoundation
-  -> frame nativo com backpressure latest-only
-  -> OpenCV/C++ (contornos, quadrilátero e estabilidade)
-  -> EventChannel com pontos normalizados e métricas
-  -> Texture para o preview
-  -> CustomPainter Flutter para o overlay
+build/app/outputs/flutter-apk/app-debug.apk
 ```
 
-Frames de câmera não atravessam os canais Flutter. O recorte em perspectiva e os filtros de página são executados nativamente; Dart recebe apenas metadados e caminhos de arquivos.
+Ele pode ser enviado diretamente para o time. No Android, abra o arquivo e autorize a instalação por essa fonte quando solicitado. Com o aparelho conectado por USB, também é possível instalar pelo terminal:
+
+```bash
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+```
+
+O APK debug usa uma assinatura de desenvolvimento e serve apenas para testes internos. Uma publicação na Play Store exige uma chave de release e um App Bundle assinado.
+
+## Testes
+
+```bash
+cd document_scanner_flutter
+flutter analyze
+flutter test
+
+cd example
+flutter analyze
+flutter test
+```
 
 ## Licença
 
-Veja [LICENSE](LICENSE).
+Distribuído sob a licença descrita em [LICENSE](LICENSE).

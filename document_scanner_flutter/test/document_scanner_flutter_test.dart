@@ -75,6 +75,18 @@ class FakeScannerPlatform extends DocumentScannerFlutterPlatform {
       CropResult(path: outputPath, width: 800, height: 600);
 
   @override
+  Future<OcrResult> recognizeText(
+    String imagePath, {
+    List<String> languages = const <String>[],
+  }) async =>
+      OcrResult(
+        text: 'Invoice 123',
+        blocks: const <OcrTextBlock>[],
+        languages: languages,
+        durationMilliseconds: 12,
+      );
+
+  @override
   Future<CameraPreviewInfo> startPreview(ScannerOptions options) async =>
       const CameraPreviewInfo(
         textureId: 7,
@@ -175,6 +187,12 @@ void main() {
         'grayscale',
       );
       expect(filtered.path, '/tmp/filtered.jpg');
+      final OcrResult ocr = await controller.recognizeText(
+        '/tmp/crop.jpg',
+        languages: const <String>['en-US'],
+      );
+      expect(ocr.text, 'Invoice 123');
+      expect(ocr.languages, <String>['en-US']);
       await controller.close();
       expect(platform.disposed, isTrue);
       expect(controller.isDisposed, isTrue);

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:document_scanner_flutter/document_scanner_flutter.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/legacy_localizations.dart';
 import '../../settings/application/scanner_settings_controller.dart';
 
 class ScannerPage extends StatefulWidget {
@@ -44,7 +45,7 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
       if (event.type == ScannerEventType.captureCompleted &&
           event.automatic &&
           event.capture != null) {
-        unawaited(_useCameraCapture(event.capture!));
+        unawaited(_useCameraCapture(event.capture!, automatic: true));
       }
       if (event.type == ScannerEventType.error && mounted) {
         setState(() => _error = event.errorMessage ?? event.errorCode);
@@ -87,7 +88,7 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
       _error = null;
     });
     try {
-      await _useCameraCapture(await _controller.capture());
+      await _useCameraCapture(await _controller.capture(), automatic: false);
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     } finally {
@@ -95,18 +96,36 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _useCameraCapture(CaptureResult capture) async {
+  Future<void> _useCameraCapture(
+    CaptureResult capture, {
+    required bool automatic,
+  }) async {
     if (!_cameraActive || _handlingCapture) return;
     _handlingCapture = true;
     if (mounted) setState(() => _busy = true);
     try {
       await _controller.stopPreview();
+      if (mounted) setState(() => _cameraActive = false);
       final DetectionResult detection = await _controller.detectDocument(
         capture.path,
       );
       if (!mounted) return;
+      if (automatic) {
+        final List<ScannerPoint>? corners = detection.corners;
+        if (corners == null) {
+          await _resumeAfterAutomaticCaptureFailure(
+            'O documento se moveu durante a captura. Tente mantê-lo estável.',
+          );
+          return;
+        }
+        final CropResult result = await _controller.cropDocument(
+          capture.path,
+          corners: corners,
+        );
+        if (mounted) Navigator.pop(context, result);
+        return;
+      }
       setState(() {
-        _cameraActive = false;
         _selected = capture;
         _detection = detection;
         _editedCorners = detection.corners ?? _fallbackCorners;
@@ -116,10 +135,34 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
         }
       });
     } catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      if (automatic) {
+        await _resumeAfterAutomaticCaptureFailure('$error');
+      } else if (mounted) {
+        setState(() => _error = '$error');
+      }
     } finally {
       _handlingCapture = false;
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _resumeAfterAutomaticCaptureFailure(String message) async {
+    if (!mounted) return;
+    try {
+      await _controller.startPreview();
+      if (mounted) {
+        setState(() {
+          _cameraActive = true;
+          _error = message;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _cameraActive = false;
+          _error = '$message\nNão foi possível reiniciar a câmera: $error';
+        });
+      }
     }
   }
 
@@ -254,13 +297,19 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Digitalizar página'),
+        title: Text(context.l10n.text('scan', fallback: 'Digitalizar página')),
         actions: <Widget>[
           if (_cameraActive)
             IconButton(
               tooltip: _autoCapture
-                  ? 'Desativar captura automática'
-                  : 'Ativar captura automática',
+                  ? context.l10n.text(
+                      'autoscan',
+                      fallback: 'Desativar captura automática',
+                    )
+                  : context.l10n.text(
+                      'autoscan',
+                      fallback: 'Ativar captura automática',
+                    ),
               onPressed: _busy ? null : _toggleAutoCapture,
               icon: Icon(
                 _autoCapture ? Icons.auto_awesome : Icons.auto_awesome_outlined,
@@ -322,13 +371,17 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
                             onCornersChanged: (List<ScannerPoint> value) =>
                                 _editedCorners = value,
                           )
-                        : const Center(
+                        : Center(
                             child: Padding(
-                              padding: EdgeInsets.all(32),
+                              padding: const EdgeInsets.all(32),
                               child: Text(
-                                'Abra a câmera ou escolha uma imagem para localizar as bordas do documento.',
+                                context.l10n.text(
+                                  'no_document_yet',
+                                  fallback:
+                                      'Abra a câmera ou escolha uma imagem para localizar as bordas do documento.',
+                                ),
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.white70),
+                                style: const TextStyle(color: Colors.white70),
                               ),
                             ),
                           ),
@@ -357,14 +410,17 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
             icon: const Icon(Icons.flash_on),
           ),
           IconButton.filled(
-            tooltip: 'Capturar',
+            tooltip: context.l10n.text('scan', fallback: 'Capturar'),
             onPressed: _busy ? null : _captureCamera,
             iconSize: 36,
             padding: const EdgeInsets.all(18),
             icon: const Icon(Icons.camera_alt),
           ),
           IconButton.filledTonal(
-            tooltip: 'Alternar câmera',
+            tooltip: context.l10n.text(
+              'toggle_camera',
+              fallback: 'Alternar câmera',
+            ),
             onPressed: _busy ? null : _switchCamera,
             icon: const Icon(Icons.cameraswitch),
           ),
@@ -390,7 +446,7 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
             child: FilledButton.icon(
               onPressed: _busy ? null : () => Navigator.pop(context, _crop),
               icon: const Icon(Icons.check),
-              label: const Text('Usar página'),
+              label: Text(context.l10n.text('save', fallback: 'Usar página')),
             ),
           ),
         ],
@@ -402,12 +458,15 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
           child: FilledButton.icon(
             onPressed: _busy ? null : _startCamera,
             icon: const Icon(Icons.document_scanner),
-            label: const Text('Câmera'),
+            label: Text(context.l10n.text('camera', fallback: 'Câmera')),
           ),
         ),
         const SizedBox(width: 8),
         IconButton.filledTonal(
-          tooltip: 'Escolher imagem',
+          tooltip: context.l10n.text(
+            'import_documents',
+            fallback: 'Escolher imagem',
+          ),
           onPressed: _busy ? null : _chooseAndDetect,
           icon: const Icon(Icons.photo_library_outlined),
         ),

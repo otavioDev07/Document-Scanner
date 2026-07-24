@@ -1,0 +1,24 @@
+{
+  "app": {
+    "name": "OSS Document Scanner"
+  },
+  "documents": "ドキュメント",
+  "documents_count": "%1$s 個のドキュメント",
+  "folder": "フォルダ",
+  "autoscan": "自動スキャン",
+  "backup_restore": "バックアップ / 復元",
+  "data_sync": "アプリデータの同期",
+  "data_sync_desc": "アプリのデータを同期すると、複数のデバイスで使用できるようになります",
+  "biometric_lock": "生体認証を使用したセキュリティ",
+  "biometric_lock_desc": "PIN(暗証番号)や生体認証でアプリをロックする",
+  "biometric_auto_lock": "生体認証自動ロック",
+  "biometric_auto_lock_desc": "有効な場合、アプリがバックグラウンドになると自動的にアプリがロックされます",
+  "cancel": "キャンセル",
+  "delete": "削除",
+  "export": "エクスポート",
+  "camera": "カメラ",
+  "delete_page": "削除",
+  "camera_permission_needed": "写真を撮影するには、カメラへのアクセス権が必要です",
+  "error": "エラー",
+  "auto_sync": "自動同期"
+}

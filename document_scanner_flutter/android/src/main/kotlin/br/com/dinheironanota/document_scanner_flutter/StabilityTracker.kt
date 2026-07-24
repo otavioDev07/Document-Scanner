@@ -1,12 +1,11 @@
 package br.com.dinheironanota.document_scanner_flutter
 
-import kotlin.math.hypot
-
 internal data class StabilityUpdate(
     val state: String,
     val progress: Double,
     val stableFrames: Long,
     val shouldCapture: Boolean,
+    val corners: DoubleArray? = null,
 )
 
 /**
@@ -22,6 +21,8 @@ internal class StabilityTracker(options: Map<String, Any?>?) {
     private var cooldownMs = options.number("autoCaptureCooldownMs", 1500.0).toLong().coerceAtLeast(0)
 
     private var previous: DoubleArray? = null
+    private var displayed: DoubleArray? = null
+    private var pendingMovement: DoubleArray? = null
     private var stableSinceNs = 0L
     private var stableFrames = 0L
     private var cooldownUntilNs = 0L
@@ -53,33 +54,100 @@ internal class StabilityTracker(options: Map<String, Any?>?) {
         val prior = previous
         if (prior == null) {
             previous = corners.copyOf()
+            displayed = corners.copyOf()
             stableSinceNs = timestampNs
             stableFrames = 1
-            return StabilityUpdate("detected", 0.0, stableFrames, false)
+            return StabilityUpdate(
+                state = "detected",
+                progress = 0.0,
+                stableFrames = stableFrames,
+                shouldCapture = false,
+                corners = displayed?.copyOf(),
+            )
         }
 
-        val maximumMovement = maximumCornerDistance(prior, corners, imageWidth, imageHeight)
+        if (maximumMovement(prior, corners, imageWidth, imageHeight) >= distanceThreshold) {
+            val pending = pendingMovement
+            if (
+                pending != null &&
+                maximumMovement(pending, corners, imageWidth, imageHeight) < distanceThreshold
+            ) {
+                // Match iOS: two consecutive, mutually close frames represent
+                // real movement. A single distant contour is detector noise and
+                // must not reset the progress.
+                previous = corners.copyOf()
+                displayed = smoothed(displayed, corners)
+                pendingMovement = null
+                stableSinceNs = timestampNs
+                stableFrames = 1
+                capturedCurrentDocument = false
+                return StabilityUpdate(
+                    state = "detected",
+                    progress = 0.0,
+                    stableFrames = stableFrames,
+                    shouldCapture = false,
+                    corners = displayed?.copyOf(),
+                )
+            }
+            pendingMovement = corners.copyOf()
+            return progressUpdate(
+                timestampNs = timestampNs,
+                autoCaptureEnabled = autoCaptureEnabled,
+                allowCapture = false,
+            )
+        }
+
+        pendingMovement = null
         previous = corners.copyOf()
-        if (maximumMovement >= distanceThreshold) {
-            stableSinceNs = timestampNs
-            stableFrames = 1
-            capturedCurrentDocument = false
-            return StabilityUpdate("detected", 0.0, stableFrames, false)
-        }
-
+        displayed = smoothed(displayed, corners)
         stableFrames += 1
+        return progressUpdate(
+            timestampNs = timestampNs,
+            autoCaptureEnabled = autoCaptureEnabled,
+            allowCapture = true,
+        )
+    }
+
+    private fun progressUpdate(
+        timestampNs: Long,
+        autoCaptureEnabled: Boolean,
+        allowCapture: Boolean,
+    ): StabilityUpdate {
         val elapsedMs = (timestampNs - stableSinceNs).coerceAtLeast(0) / 1_000_000.0
-        val totalMs = delayMs + durationMs
-        val progress = (elapsedMs / totalMs).coerceIn(0.0, 1.0)
-        if (elapsedMs < totalMs) {
-            return StabilityUpdate("stabilizing", progress, stableFrames, false)
+        if (elapsedMs < delayMs) {
+            return StabilityUpdate(
+                state = "detected",
+                progress = 0.0,
+                stableFrames = stableFrames,
+                shouldCapture = false,
+                corners = displayed?.copyOf() ?: previous?.copyOf(),
+            )
         }
 
-        val shouldCapture = autoCaptureEnabled &&
+        val scanningElapsedMs = elapsedMs - delayMs
+        val progress = (scanningElapsedMs / durationMs).coerceIn(0.0, 1.0)
+        if (scanningElapsedMs < durationMs) {
+            return StabilityUpdate(
+                state = "stabilizing",
+                progress = progress,
+                stableFrames = stableFrames,
+                shouldCapture = false,
+                corners = displayed?.copyOf() ?: previous?.copyOf(),
+            )
+        }
+
+        val shouldCapture = allowCapture &&
+            autoCaptureEnabled &&
             !capturedCurrentDocument &&
             timestampNs >= cooldownUntilNs
         if (shouldCapture) capturedCurrentDocument = true
-        return StabilityUpdate("stable", 1.0, stableFrames, shouldCapture)
+        return StabilityUpdate(
+            state = "stable",
+            progress = 1.0,
+            stableFrames = stableFrames,
+            shouldCapture = shouldCapture,
+            corners = displayed?.copyOf() ?: previous?.copyOf(),
+        )
     }
 
     @Synchronized
@@ -97,24 +165,34 @@ internal class StabilityTracker(options: Map<String, Any?>?) {
 
     private fun resetCandidate() {
         previous = null
+        displayed = null
+        pendingMovement = null
         stableSinceNs = 0
         stableFrames = 0
     }
 
-    private fun maximumCornerDistance(
+    private fun smoothed(current: DoubleArray?, target: DoubleArray): DoubleArray {
+        if (current == null || current.size != target.size) return target.copyOf()
+        val factor = 0.35
+        return DoubleArray(target.size) { index ->
+            current[index] + (target[index] - current[index]) * factor
+        }
+    }
+
+    private fun maximumMovement(
         first: DoubleArray,
         second: DoubleArray,
         width: Int,
         height: Int,
-    ): Double {
-        var maximum = 0.0
-        for (index in 0 until 4) {
-            val dx = (first[index * 2] - second[index * 2]) * width
-            val dy = (first[index * 2 + 1] - second[index * 2 + 1]) * height
-            maximum = maxOf(maximum, hypot(dx, dy))
-        }
-        return maximum
-    }
+    ): Double =
+        // Preserve the legacy iOS matching rule: track one inward-facing
+        // axis per ordered corner so edge jitter does not look like movement.
+        maxOf(
+            kotlin.math.abs(first[0] - second[0]) * width,
+            kotlin.math.abs(first[3] - second[3]) * height,
+            kotlin.math.abs(first[4] - second[4]) * width,
+            kotlin.math.abs(first[7] - second[7]) * height,
+        )
 
     private fun Map<String, Any?>?.number(name: String, fallback: Double): Double =
         (this?.get(name) as? Number)?.toDouble() ?: fallback

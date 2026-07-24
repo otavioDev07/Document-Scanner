@@ -17,6 +17,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   document_scanner_flutter:
     # When depending on this package from a real application you should use:
@@ -34,6 +36,9 @@ dependencies:
   pdf: ^3.13.0
   share_plus: ^13.2.1
   shared_preferences: ^2.5.5
+  archive: ^4.0.9
+  crypto: ^3.0.7
+  file_selector: ^1.1.0
 
 dev_dependencies:
   integration_test:
@@ -61,6 +66,7 @@ flutter:
 
   assets:
     - assets/test-document.png
+    - assets/i18n/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

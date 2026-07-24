@@ -16,10 +16,6 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>OSS Document Scanner</string>
-	<key>NSCameraUsageDescription</key>
-	<string>A câmera é usada para detectar e digitalizar documentos.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>A fototeca é usada para importar imagens de documentos.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -30,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>A câmera é usada para detectar e digitalizar documentos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A fototeca é usada para importar imagens de documentos.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

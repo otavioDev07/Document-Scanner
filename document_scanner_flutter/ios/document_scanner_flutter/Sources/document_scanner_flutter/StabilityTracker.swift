@@ -5,6 +5,21 @@ struct StabilityUpdate {
   let progress: Double
   let stableFrames: Int64
   let shouldCapture: Bool
+  let corners: [[String: NSNumber]]?
+
+  init(
+    state: String,
+    progress: Double,
+    stableFrames: Int64,
+    shouldCapture: Bool,
+    corners: [[String: NSNumber]]? = nil
+  ) {
+    self.state = state
+    self.progress = progress
+    self.stableFrames = stableFrames
+    self.shouldCapture = shouldCapture
+    self.corners = corners
+  }
 }
 
 final class StabilityTracker {
@@ -14,6 +29,8 @@ final class StabilityTracker {
   private var cooldownNanoseconds: UInt64 = 1_500_000_000
 
   private var previous: [Double]?
+  private var displayed: [Double]?
+  private var pendingMovement: [Double]?
   private var stableSince: UInt64 = 0
   private var stableFrames: Int64 = 0
   private var cooldownUntil: UInt64 = 0
@@ -56,34 +73,82 @@ final class StabilityTracker {
 
     guard let prior = previous else {
       previous = values
+      displayed = values
       stableSince = timestamp
       stableFrames = 1
       return StabilityUpdate(
-        state: "detected", progress: 0, stableFrames: 1, shouldCapture: false)
+        state: "detected",
+        progress: 0,
+        stableFrames: 1,
+        shouldCapture: false,
+        corners: mapped(displayed))
     }
 
-    previous = values
     if maximumMovement(prior, values, imageWidth, imageHeight) >= distanceThreshold {
-      stableSince = timestamp
-      stableFrames = 1
-      capturedCurrentDocument = false
-      return StabilityUpdate(
-        state: "detected", progress: 0, stableFrames: 1, shouldCapture: false)
+      if let pendingMovement,
+        maximumMovement(pendingMovement, values, imageWidth, imageHeight) < distanceThreshold
+      {
+        // Two consecutive, mutually close frames represent real movement.
+        // A single distant contour is detector noise and must not reset the
+        // progress.
+        previous = values
+        displayed = smoothed(displayed, toward: values)
+        self.pendingMovement = nil
+        stableSince = timestamp
+        stableFrames = 1
+        capturedCurrentDocument = false
+        return StabilityUpdate(
+          state: "detected",
+          progress: 0,
+          stableFrames: 1,
+          shouldCapture: false,
+          corners: mapped(displayed))
+      }
+      pendingMovement = values
+      return progressUpdate(
+        timestamp: timestamp,
+        autoCaptureEnabled: autoCaptureEnabled,
+        allowCapture: false)
     }
 
+    pendingMovement = nil
+    previous = values
+    displayed = smoothed(displayed, toward: values)
     stableFrames += 1
-    let total = delayNanoseconds + durationNanoseconds
+    return progressUpdate(
+      timestamp: timestamp,
+      autoCaptureEnabled: autoCaptureEnabled,
+      allowCapture: true)
+  }
+
+  private func progressUpdate(
+    timestamp: UInt64,
+    autoCaptureEnabled: Bool,
+    allowCapture: Bool
+  ) -> StabilityUpdate {
     let elapsed = timestamp >= stableSince ? timestamp - stableSince : 0
-    let progress = min(1, Double(elapsed) / Double(max(1, total)))
-    if elapsed < total {
+    if elapsed < delayNanoseconds {
+      return StabilityUpdate(
+        state: "detected",
+        progress: 0,
+        stableFrames: stableFrames,
+        shouldCapture: false,
+        corners: mapped(displayed ?? previous))
+    }
+
+    let scanningElapsed = elapsed - delayNanoseconds
+    let progress = min(1, Double(scanningElapsed) / Double(max(1, durationNanoseconds)))
+    if scanningElapsed < durationNanoseconds {
       return StabilityUpdate(
         state: "stabilizing",
         progress: progress,
         stableFrames: stableFrames,
-        shouldCapture: false)
+        shouldCapture: false,
+        corners: mapped(displayed ?? previous))
     }
 
-    let shouldCapture = autoCaptureEnabled
+    let shouldCapture = allowCapture
+      && autoCaptureEnabled
       && !capturedCurrentDocument
       && timestamp >= cooldownUntil
     if shouldCapture { capturedCurrentDocument = true }
@@ -91,7 +156,8 @@ final class StabilityTracker {
       state: "stable",
       progress: 1,
       stableFrames: stableFrames,
-      shouldCapture: shouldCapture)
+      shouldCapture: shouldCapture,
+      corners: mapped(displayed ?? previous))
   }
 
   func onCaptured(timestamp: UInt64) {
@@ -107,6 +173,8 @@ final class StabilityTracker {
 
   private func resetCandidate() {
     previous = nil
+    displayed = nil
+    pendingMovement = nil
     stableSince = 0
     stableFrames = 0
   }
@@ -124,19 +192,39 @@ final class StabilityTracker {
     return values
   }
 
+  private func mapped(_ values: [Double]?) -> [[String: NSNumber]]? {
+    guard let values, values.count == 8 else { return nil }
+    return stride(from: 0, to: values.count, by: 2).map { index in
+      [
+        "x": NSNumber(value: values[index]),
+        "y": NSNumber(value: values[index + 1]),
+      ]
+    }
+  }
+
+  private func smoothed(_ current: [Double]?, toward target: [Double]) -> [Double] {
+    guard let current, current.count == target.count else { return target }
+    let factor = 0.35
+    return zip(current, target).map { source, destination in
+      source + (destination - source) * factor
+    }
+  }
+
   private func maximumMovement(
     _ first: [Double],
     _ second: [Double],
     _ width: Int,
     _ height: Int
   ) -> Double {
-    var maximum = 0.0
-    for index in 0..<4 {
-      let dx = (first[index * 2] - second[index * 2]) * Double(width)
-      let dy = (first[index * 2 + 1] - second[index * 2 + 1]) * Double(height)
-      maximum = max(maximum, hypot(dx, dy))
-    }
-    return maximum
+    // Preserve AutoScanHandler's iOS matching rule. It intentionally tracks
+    // one inward-facing axis per ordered corner, which ignores contour jitter
+    // along the document edges while still resetting for real movement.
+    return max(
+      abs(first[0] - second[0]) * Double(width),
+      abs(first[3] - second[3]) * Double(height),
+      abs(first[4] - second[4]) * Double(width),
+      abs(first[7] - second[7]) * Double(height)
+    )
   }
 
   private func number(_ options: [String: Any]?, _ key: String, _ fallback: Double) -> Double {

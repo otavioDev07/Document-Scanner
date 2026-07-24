@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:document_scanner_flutter/document_scanner_flutter.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oss_document_scanner_flutter/core/export/pdf_export_service.dart';
+import 'package:oss_document_scanner_flutter/core/backup/backup_service.dart';
 import 'package:oss_document_scanner_flutter/core/files/document_repository.dart';
 import 'package:oss_document_scanner_flutter/features/documents/domain/scanned_document.dart';
 import 'package:path/path.dart' as path;
@@ -136,6 +137,82 @@ void main() {
     expect(recovered.single.id, document.id);
     expect(await metadata.exists(), isTrue);
     expect(await backup.exists(), isFalse);
+  });
+
+  test('persists folders, favorite, OCR and reversible trash', () async {
+    ScannedDocument document = await repository.createFromCrop(
+      crop(),
+      name: 'Nota de energia',
+    );
+    final folder = await repository.createFolder('Contas');
+    document = await repository.setFolders(document, <String>[folder.id]);
+    document = await repository.setFavorite(document, true);
+    document = await repository.saveOcr(
+      document,
+      document.pages.single.id,
+      'Vencimento 10/08/2026 total R\$ 123,45',
+      language: 'pt-BR',
+    );
+
+    expect((await repository.loadFolders()).single.name, 'Contas');
+    expect(document.favorite, isTrue);
+    expect(document.folderIds, <String>[folder.id]);
+    expect(document.searchableText, contains('vencimento'));
+
+    document = await repository.moveToTrash(document);
+    expect(document.isTrashed, isTrue);
+    expect(document.favorite, isFalse);
+    expect((await repository.loadDocuments()).single.isTrashed, isTrue);
+
+    document = await repository.restoreFromTrash(document);
+    expect(document.isTrashed, isFalse);
+    await repository.deleteFolder(folder.id);
+    expect(await repository.loadFolders(), isEmpty);
+    expect((await repository.loadDocuments()).single.folderIds, isEmpty);
+  });
+
+  test('creates and restores a password-protected merge backup', () async {
+    ScannedDocument document = await repository.createFromCrop(
+      crop(),
+      name: 'Documento protegido',
+    );
+    final folder = await repository.createFolder('Arquivo');
+    document = await repository.setFolders(document, <String>[folder.id]);
+    document = await repository.saveOcr(
+      document,
+      document.pages.single.id,
+      'conteúdo pesquisável',
+    );
+    final File backup = await BackupService(
+      repository,
+    ).createBackup(password: 'senha-forte', outputDirectory: sandbox);
+    expect(await backup.exists(), isTrue);
+
+    final Directory restoredRoot = Directory(
+      path.join(sandbox.path, 'restored'),
+    );
+    final DocumentRepository restoredRepository = DocumentRepository(
+      rootDirectory: () async => restoredRoot,
+      nativeFilter:
+          (String imagePath, String outputPath, String filter) async =>
+              CropResult(path: outputPath, width: 1200, height: 1600),
+    );
+    await expectLater(
+      BackupService(
+        restoredRepository,
+      ).restoreBackup(backup, password: 'senha-errada'),
+      throwsA(anything),
+    );
+    final BackupRestoreResult result = await BackupService(
+      restoredRepository,
+    ).restoreBackup(backup, password: 'senha-forte');
+
+    expect(result.importedDocuments, 1);
+    final ScannedDocument restored =
+        (await restoredRepository.loadDocuments()).single;
+    expect(restored.name, 'Documento protegido');
+    expect(restored.searchableText, contains('conteúdo pesquisável'));
+    expect((await restoredRepository.loadFolders()).single.name, 'Arquivo');
   });
 
   test(

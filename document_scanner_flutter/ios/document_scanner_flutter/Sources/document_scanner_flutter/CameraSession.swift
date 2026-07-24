@@ -256,7 +256,7 @@ final class CameraSession: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
 
     let started = DispatchTime.now().uptimeNanoseconds
     let resizeThreshold = (options["previewResizeThreshold"] as? NSNumber)?.intValue ?? 200
-    let areaFactor = (options["previewAreaScaleMinFactor"] as? NSNumber)?.doubleValue ?? 0.1
+    let areaFactor = (options["previewAreaScaleMinFactor"] as? NSNumber)?.doubleValue ?? 0.04
     let corners = DSNativeDocumentProcessor.detect(
       pixelBuffer,
       resizeThreshold: resizeThreshold,
@@ -270,7 +270,7 @@ final class CameraSession: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
       timestamp: timestamp,
       autoCaptureEnabled: autoCaptureEnabled)
 
-    if let corners {
+    if let corners = update.corners {
       lastHadDocument = true
       var extra: [String: Any] = frameMetadata(update: update, processingTime: processingTime)
       extra["corners"] = corners

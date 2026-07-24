@@ -8,6 +8,7 @@ import 'models/capture_result.dart';
 import 'models/crop_result.dart';
 import 'models/detection_result.dart';
 import 'models/native_status.dart';
+import 'models/ocr_result.dart';
 import 'models/scanner_camera_state.dart';
 import 'models/scanner_corners.dart';
 import 'models/scanner_diagnostics.dart';
@@ -137,6 +138,14 @@ final class DocumentScannerController extends ChangeNotifier {
           filter,
           jpegQuality: jpegQuality,
         ),
+      );
+
+  Future<OcrResult> recognizeText(
+    String imagePath, {
+    List<String> languages = const <String>[],
+  }) =>
+      _runReady(
+        () => _platform.recognizeText(imagePath, languages: languages),
       );
 
   Future<CameraPreviewInfo> startPreview() async {

@@ -58,6 +58,9 @@ internal class CameraSession(
     private var previewWidth = 0
     private var previewHeight = 0
     private var previewRotation = 0
+    private var previewCropWidth = 0
+    private var previewCropHeight = 0
+    private var previewTransformationReady = false
     private var options: Map<String, Any?>? = null
     private var stabilityTracker = StabilityTracker(null)
     private var pendingStart: ((Result<Map<String, Any>>) -> Unit)? = null
@@ -275,6 +278,9 @@ internal class CameraSession(
         active = false
         previewWidth = 0
         previewHeight = 0
+        previewCropWidth = 0
+        previewCropHeight = 0
+        previewTransformationReady = false
         previewAnnouncementPending = true
 
         val providerFuture = ProcessCameraProvider.getInstance(context)
@@ -306,6 +312,13 @@ internal class CameraSession(
                         val entry = ensureTexture()
                         previewWidth = request.resolution.width
                         previewHeight = request.resolution.height
+                        request.setTransformationInfoListener(mainExecutor) { info ->
+                            previewRotation = info.rotationDegrees
+                            previewCropWidth = info.cropRect.width()
+                            previewCropHeight = info.cropRect.height()
+                            previewTransformationReady = true
+                            completeStartIfReady()
+                        }
                         entry.surfaceTexture().setDefaultBufferSize(previewWidth, previewHeight)
                         val surface = Surface(entry.surfaceTexture())
                         request.provideSurface(surface, mainExecutor) { surface.release() }
@@ -325,7 +338,6 @@ internal class CameraSession(
                         nextAnalysis,
                         nextCapture,
                     )
-                    previewRotation = camera?.cameraInfo?.getSensorRotationDegrees(targetRotation) ?: 0
                     active = true
                     completeStartIfReady()
                 } catch (error: Throwable) {
@@ -352,7 +364,7 @@ internal class CameraSession(
             require(planes.size == 3) { "CameraX must deliver YUV_420_888 with three planes" }
             val rotation = image.imageInfo.rotationDegrees
             val resizeThreshold = options.number("previewResizeThreshold", 200.0).toInt().coerceAtLeast(0)
-            val areaScaleMinFactor = options.number("previewAreaScaleMinFactor", 0.1).coerceIn(0.0, 1.0)
+            val areaScaleMinFactor = options.number("previewAreaScaleMinFactor", 0.04).coerceIn(0.0, 1.0)
             val corners = processor.detectFrame(
                 width = image.width,
                 height = image.height,
@@ -380,7 +392,8 @@ internal class CameraSession(
             val elapsedMs = (System.nanoTime() - startedNs) / 1_000_000.0
             metrics.recordProcessed(elapsedMs, corners != null)
 
-            if (corners == null) {
+            val displayedCorners = stability.corners
+            if (displayedCorners == null) {
                 if (lastHadDocument || stability.state == "lost") {
                     lastHadDocument = false
                     emit(
@@ -410,8 +423,8 @@ internal class CameraSession(
             lastHadDocument = true
             val cornerMaps = List(4) { index ->
                 mapOf(
-                    "x" to corners[index * 2],
-                    "y" to corners[index * 2 + 1],
+                    "x" to displayedCorners[index * 2],
+                    "y" to displayedCorners[index * 2 + 1],
                 )
             }
             emit(
@@ -455,7 +468,12 @@ internal class CameraSession(
     }
 
     private fun completeStartIfReady() {
-        if (!active || previewWidth <= 0 || previewHeight <= 0) return
+        if (
+            !active ||
+            previewWidth <= 0 ||
+            previewHeight <= 0 ||
+            !previewTransformationReady
+        ) return
         val info = previewInfo()
         if (previewAnnouncementPending) {
             previewAnnouncementPending = false
@@ -471,12 +489,17 @@ internal class CameraSession(
     private fun previewInfo(): Map<String, Any> {
         val entry = textureEntry
             ?: throw CameraOperationException("INVALID_STATE", "Camera Texture is unavailable")
+        val transform = cameraXSurfaceTexturePreviewTransform(
+            width = previewCropWidth.takeIf { it > 0 } ?: previewWidth,
+            height = previewCropHeight.takeIf { it > 0 } ?: previewHeight,
+            rotationDegrees = previewRotation,
+        )
         return mapOf(
             "textureId" to entry.id(),
-            "width" to previewWidth,
-            "height" to previewHeight,
-            "rotationDegrees" to previewRotation,
-            "mirrored" to (lensFacing == CameraSelector.LENS_FACING_FRONT),
+            "width" to transform.width,
+            "height" to transform.height,
+            "rotationDegrees" to transform.rotationDegrees,
+            "mirrored" to transform.mirrored,
         )
     }
 
@@ -492,6 +515,9 @@ internal class CameraSession(
         previewWidth = 0
         previewHeight = 0
         previewRotation = 0
+        previewCropWidth = 0
+        previewCropHeight = 0
+        previewTransformationReady = false
     }
 
     private fun unbindOwnedUseCases() {
@@ -567,6 +593,37 @@ internal class CameraSession(
 
     private fun Map<String, Any?>?.boolean(name: String, fallback: Boolean): Boolean =
         this?.get(name) as? Boolean ?: fallback
+}
+
+internal data class FlutterPreviewTransform(
+    val width: Int,
+    val height: Int,
+    val rotationDegrees: Int,
+    val mirrored: Boolean,
+)
+
+/**
+ * CameraX writes crop, rotation, and front-camera mirroring into a SurfaceTexture transform.
+ * Flutter applies that transform while sampling the external texture, so only the oriented layout
+ * dimensions must be reported. Rotating or mirroring the Texture widget again double-transforms
+ * the preview and makes motion appear inverted.
+ */
+internal fun cameraXSurfaceTexturePreviewTransform(
+    width: Int,
+    height: Int,
+    rotationDegrees: Int,
+): FlutterPreviewTransform {
+    require(width > 0 && height > 0) { "Preview dimensions must be positive" }
+    require(rotationDegrees in setOf(0, 90, 180, 270)) {
+        "Preview rotation must be 0, 90, 180, or 270"
+    }
+    val swapsDimensions = rotationDegrees == 90 || rotationDegrees == 270
+    return FlutterPreviewTransform(
+        width = if (swapsDimensions) height else width,
+        height = if (swapsDimensions) width else height,
+        rotationDegrees = 0,
+        mirrored = false,
+    )
 }
 
 /** Debug-only aggregate; image data and paths never enter diagnostics. */

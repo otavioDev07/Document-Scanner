@@ -1,0 +1,30 @@
+{
+  "documents": "isemliyen",
+  "folders": "Ikaramen",
+  "folder": "akaram",
+  "settings": {
+    "title": "Iɣewwaren"
+  },
+  "search": "nadi",
+  "scan": "Smiḍen",
+  "page": "asebter",
+  "sync": "mtawi",
+  "security": "Taɣellist",
+  "security_settings": "Iɣewwaṛen n tɣellist",
+  "cancel": "sefsex",
+  "save": "Sekles",
+  "delete": "kkes",
+  "rename": "Snifel isem",
+  "share": "bḍu",
+  "export": "Sifeḍ",
+  "language": "tutlayt",
+  "languages": "tutlayin",
+  "select_language": "fren tutlayt",
+  "quality": "Taɣara",
+  "jpeg_quality": "Taɣara JPEG",
+  "camera": "Takamiṛat",
+  "delete_page": "kkes",
+  "error": "Anezri",
+  "share_images": "Bḍu tugniwin-a",
+  "local_folder": "Akaram adigan"
+}

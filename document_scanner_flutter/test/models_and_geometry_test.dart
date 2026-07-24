@@ -3,6 +3,14 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('preview defaults preserve the legacy detector parameters', () {
+    const ScannerOptions options = ScannerOptions();
+
+    expect(options.previewResizeThreshold, 200);
+    expect(options.previewAreaScaleMinFactor, 0.04);
+    expect(options.toMap()['previewAreaScaleMinFactor'], 0.04);
+  });
+
   test('orders corners as TL, TR, BR, BL and rejects invalid shapes', () {
     const ScannerPoint tl = ScannerPoint(.1, .1);
     const ScannerPoint tr = ScannerPoint(.9, .1);

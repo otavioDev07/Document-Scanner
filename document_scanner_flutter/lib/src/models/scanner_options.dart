@@ -6,7 +6,7 @@ final class ScannerOptions {
     this.jpegQuality = 92,
     this.autoCapture = false,
     this.previewResizeThreshold = 200,
-    this.previewAreaScaleMinFactor = 0.1,
+    this.previewAreaScaleMinFactor = 0.04,
     this.autoCaptureDistanceThreshold = 50,
     this.autoCaptureDelayMs = 1000,
     this.autoCaptureDurationMs = 1000,

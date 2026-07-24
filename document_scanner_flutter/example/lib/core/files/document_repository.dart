@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../../features/documents/domain/scanned_document.dart';
+import '../../features/documents/domain/document_folder.dart';
 
 typedef NativeFilterOperation =
     Future<CropResult> Function(
@@ -26,6 +27,8 @@ final class DocumentRepository {
   final Future<Directory> Function() _rootDirectory;
   final NativeFilterOperation _nativeFilter;
   final Random _random = Random.secure();
+
+  Future<Directory> get rootDirectory => _ensureRoot();
 
   Future<List<ScannedDocument>> loadDocuments() async {
     final Directory root = await _ensureRoot();
@@ -61,6 +64,113 @@ final class DocumentRepository {
           second.updatedAt.compareTo(first.updatedAt),
     );
     return documents;
+  }
+
+  Future<List<DocumentFolder>> loadFolders() async {
+    final Directory root = await _ensureRoot();
+    final File metadata = File(path.join(root.path, 'folders.json'));
+    final File backup = File(path.join(root.path, 'folders.backup.json'));
+    if (!await metadata.exists() && await backup.exists()) {
+      await backup.rename(metadata.path);
+    }
+    if (!await metadata.exists()) return const <DocumentFolder>[];
+    try {
+      final Object? decoded = jsonDecode(await metadata.readAsString());
+      if (decoded is! Map || decoded['folders'] is! List) {
+        throw const FormatException('Folder metadata is invalid');
+      }
+      final List<DocumentFolder> folders =
+          (decoded['folders'] as List)
+              .map(DocumentFolder.fromJson)
+              .toList(growable: false)
+            ..sort(
+              (DocumentFolder first, DocumentFolder second) =>
+                  first.name.toLowerCase().compareTo(second.name.toLowerCase()),
+            );
+      return folders;
+    } on FormatException {
+      return const <DocumentFolder>[];
+    }
+  }
+
+  Future<DocumentFolder> createFolder(String name, {int? colorValue}) async {
+    final List<DocumentFolder> folders = await loadFolders();
+    final String validated = _validatedName(name);
+    if (folders.any(
+      (DocumentFolder folder) =>
+          folder.name.toLowerCase() == validated.toLowerCase(),
+    )) {
+      throw ArgumentError.value(name, 'name', 'Folder already exists');
+    }
+    final DateTime now = DateTime.now();
+    final DocumentFolder folder = DocumentFolder(
+      id: _id(now),
+      name: validated,
+      colorValue: colorValue ?? 0xFF1565C0,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _writeFolders(<DocumentFolder>[...folders, folder]);
+    return folder;
+  }
+
+  Future<DocumentFolder> renameFolder(
+    DocumentFolder folder,
+    String name,
+  ) async {
+    final List<DocumentFolder> folders = await loadFolders();
+    final String validated = _validatedName(name);
+    if (folders.any(
+      (DocumentFolder item) =>
+          item.id != folder.id &&
+          item.name.toLowerCase() == validated.toLowerCase(),
+    )) {
+      throw ArgumentError.value(name, 'name', 'Folder already exists');
+    }
+    final DocumentFolder updated = folder.copyWith(
+      name: validated,
+      updatedAt: DateTime.now(),
+    );
+    await _writeFolders(
+      folders
+          .map((DocumentFolder item) => item.id == folder.id ? updated : item)
+          .toList(growable: false),
+    );
+    return updated;
+  }
+
+  Future<void> deleteFolder(String folderId) async {
+    final List<DocumentFolder> folders = await loadFolders();
+    await _writeFolders(
+      folders
+          .where((DocumentFolder folder) => folder.id != folderId)
+          .toList(growable: false),
+    );
+    for (final ScannedDocument document in await loadDocuments()) {
+      if (!document.folderIds.contains(folderId)) continue;
+      await _saveDocument(
+        document.copyWith(
+          folderIds: document.folderIds
+              .where((String id) => id != folderId)
+              .toList(growable: false),
+          updatedAt: DateTime.now(),
+        ),
+      );
+    }
+  }
+
+  Future<void> mergeFolders(Iterable<DocumentFolder> incoming) async {
+    final Map<String, DocumentFolder> merged = <String, DocumentFolder>{
+      for (final DocumentFolder folder in await loadFolders())
+        folder.id: folder,
+    };
+    for (final DocumentFolder folder in incoming) {
+      final DocumentFolder? current = merged[folder.id];
+      if (current == null || folder.updatedAt.isAfter(current.updatedAt)) {
+        merged[folder.id] = folder;
+      }
+    }
+    await _writeFolders(merged.values.toList(growable: false));
   }
 
   Future<ScannedDocument> createFromCrop(
@@ -111,6 +221,64 @@ final class DocumentRepository {
     );
     await _writeMetadata(await _documentDirectory(document.id), updated);
     return updated;
+  }
+
+  Future<ScannedDocument> setFavorite(
+    ScannedDocument document,
+    bool favorite,
+  ) => _updateDocument(document, document.copyWith(favorite: favorite));
+
+  Future<ScannedDocument> setFolders(
+    ScannedDocument document,
+    Iterable<String> folderIds,
+  ) async {
+    final Set<String> existing = (await loadFolders())
+        .map((DocumentFolder folder) => folder.id)
+        .toSet();
+    final List<String> valid = folderIds
+        .where(existing.contains)
+        .toSet()
+        .toList(growable: false);
+    return _updateDocument(document, document.copyWith(folderIds: valid));
+  }
+
+  Future<ScannedDocument> moveToTrash(ScannedDocument document) =>
+      _updateDocument(
+        document,
+        document.copyWith(trashedAt: DateTime.now(), favorite: false),
+      );
+
+  Future<ScannedDocument> restoreFromTrash(ScannedDocument document) =>
+      _updateDocument(document, document.copyWith(trashedAt: null));
+
+  Future<ScannedDocument> saveOcr(
+    ScannedDocument document,
+    String pageId,
+    String text, {
+    String? language,
+  }) async {
+    if (!document.pages.any((ScannedPage page) => page.id == pageId)) {
+      throw ArgumentError.value(pageId, 'pageId');
+    }
+    final DateTime now = DateTime.now();
+    return _updateDocument(
+      document,
+      document.copyWith(
+        pages: document.pages
+            .map(
+              (ScannedPage page) => page.id == pageId
+                  ? page.copyWith(
+                      ocrText: text.trim(),
+                      ocrLanguage: language,
+                      ocrUpdatedAt: now,
+                    )
+                  : page,
+            )
+            .toList(growable: false),
+        updatedAt: now,
+      ),
+      touch: false,
+    );
   }
 
   Future<ScannedDocument> reorderPages(
@@ -250,6 +418,12 @@ final class DocumentRepository {
     }
   }
 
+  Future<void> emptyTrash() async {
+    for (final ScannedDocument document in await loadDocuments()) {
+      if (document.isTrashed) await deleteDocument(document);
+    }
+  }
+
   Future<File> pageFile(ScannedDocument document, ScannedPage page) async {
     final Directory directory = await _documentDirectory(document.id);
     return File(path.join(directory.path, page.fileName));
@@ -260,6 +434,54 @@ final class DocumentRepository {
     final Directory directory = Directory(path.join(root.path, 'exports'));
     await directory.create(recursive: true);
     return directory;
+  }
+
+  Future<ScannedDocument> _updateDocument(
+    ScannedDocument current,
+    ScannedDocument updated, {
+    bool touch = true,
+  }) async {
+    final ScannedDocument value = touch
+        ? updated.copyWith(updatedAt: DateTime.now())
+        : updated;
+    await _saveDocument(value);
+    return value;
+  }
+
+  Future<void> _saveDocument(ScannedDocument document) async {
+    await _writeMetadata(await _documentDirectory(document.id), document);
+  }
+
+  Future<void> _writeFolders(List<DocumentFolder> folders) async {
+    final Directory root = await _ensureRoot();
+    final File metadata = File(path.join(root.path, 'folders.json'));
+    final File pending = File(path.join(root.path, 'folders.pending.json'));
+    final File backup = File(path.join(root.path, 'folders.backup.json'));
+    final List<DocumentFolder> sorted = List<DocumentFolder>.of(folders)
+      ..sort(
+        (DocumentFolder first, DocumentFolder second) =>
+            first.name.toLowerCase().compareTo(second.name.toLowerCase()),
+      );
+    await pending.writeAsString(
+      jsonEncode(<String, Object>{
+        'schemaVersion': 1,
+        'folders': sorted
+            .map((DocumentFolder folder) => folder.toJson())
+            .toList(growable: false),
+      }),
+      flush: true,
+    );
+    if (await backup.exists()) await backup.delete();
+    if (await metadata.exists()) await metadata.rename(backup.path);
+    try {
+      await pending.rename(metadata.path);
+      if (await backup.exists()) await backup.delete();
+    } catch (_) {
+      if (!await metadata.exists() && await backup.exists()) {
+        await backup.rename(metadata.path);
+      }
+      rethrow;
+    }
   }
 
   Future<ScannedPage> _persistPage(

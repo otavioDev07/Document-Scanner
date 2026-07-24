@@ -1,7 +1,9 @@
 import AVFoundation
 import DocumentScannerNative
 import Flutter
+import ImageIO
 import UIKit
+import Vision
 
 public final class DocumentScannerFlutterPlugin: NSObject, FlutterPlugin,
   FlutterStreamHandler, UIImagePickerControllerDelegate, UINavigationControllerDelegate
@@ -41,6 +43,8 @@ public final class DocumentScannerFlutterPlugin: NSObject, FlutterPlugin,
       cropDocument(call: call, result: result)
     case "applyFilter":
       applyFilter(call: call, result: result)
+    case "recognizeText":
+      recognizeText(call: call, result: result)
     case "startPreview":
       startPreview(call: call, result: result)
     case "stopPreview":
@@ -202,6 +206,83 @@ public final class DocumentScannerFlutterPlugin: NSObject, FlutterPlugin,
         outputFormat: outputFormat,
         jpegQuality: quality)
       DispatchQueue.main.async { self.returnNative(value, result: result) }
+    }
+  }
+
+  private func recognizeText(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let arguments = dictionary(call.arguments),
+      let imagePath = arguments["imagePath"] as? String,
+      !imagePath.isEmpty
+    else {
+      result(cameraError("INVALID_ARGUMENT", "imagePath is required"))
+      return
+    }
+    let requestedLanguages = arguments["languages"] as? [String] ?? []
+    processingQueue.async {
+      let startedAt = Date()
+      guard let image = UIImage(contentsOfFile: imagePath), let cgImage = image.cgImage else {
+        DispatchQueue.main.async {
+          result(self.cameraError("IMAGE_DECODE_FAILED", "Image could not be decoded"))
+        }
+        return
+      }
+      do {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        if #available(iOS 16.0, *) {
+          request.automaticallyDetectsLanguage = requestedLanguages.isEmpty
+        }
+        if !requestedLanguages.isEmpty {
+          let supported = try VNRecognizeTextRequest.supportedRecognitionLanguages(
+            for: .accurate,
+            revision: request.revision)
+          request.recognitionLanguages = requestedLanguages.filter(supported.contains)
+        }
+        let handler = VNImageRequestHandler(
+          cgImage: cgImage,
+          orientation: self.cgImageOrientation(image.imageOrientation),
+          options: [:])
+        try handler.perform([request])
+        let observations = request.results ?? []
+        let blocks: [[String: Any]] = observations.compactMap { observation in
+          guard let candidate = observation.topCandidates(1).first else { return nil }
+          let bounds = observation.boundingBox
+          return [
+            "text": candidate.string,
+            "left": bounds.minX,
+            "top": 1.0 - bounds.maxY,
+            "width": bounds.width,
+            "height": bounds.height,
+          ]
+        }
+        let text = blocks.compactMap { $0["text"] as? String }.joined(separator: "\n")
+        let value: [String: Any] = [
+          "text": text,
+          "blocks": blocks,
+          "languages": request.recognitionLanguages,
+          "durationMilliseconds": Int(Date().timeIntervalSince(startedAt) * 1000),
+        ]
+        DispatchQueue.main.async { result(value) }
+      } catch {
+        DispatchQueue.main.async {
+          result(self.cameraError("OCR_FAILED", error.localizedDescription))
+        }
+      }
+    }
+  }
+
+  private func cgImageOrientation(_ orientation: UIImage.Orientation) -> CGImagePropertyOrientation {
+    switch orientation {
+    case .up: return .up
+    case .down: return .down
+    case .left: return .left
+    case .right: return .right
+    case .upMirrored: return .upMirrored
+    case .downMirrored: return .downMirrored
+    case .leftMirrored: return .leftMirrored
+    case .rightMirrored: return .rightMirrored
+    @unknown default: return .up
     }
   }
 
