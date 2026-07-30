@@ -478,7 +478,14 @@ vector<vector<cv::Point>> DocumentDetector::scanPoint(Mat &edged, Mat &image, bo
         //  std::printf("testing on channel %i %i\n", i, iterration);
         cv::extractChannel(temp1, temp2, i);
 
-        cv::threshold(temp2, edged, options.thresh, options.threshMax, cv::THRESH_BINARY);
+        cv::adaptiveThreshold(
+            temp2,
+            edged,
+            255,
+            cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv::THRESH_BINARY,
+            71,
+            2);
         cv::morphologyEx(edged, edged, cv::MORPH_CLOSE, morphologyStruct);
         cv::dilate(edged, edged, dilateStruct);
         findSquares(edged, width, height, foundSquares, image, drawContours, (weight--));
