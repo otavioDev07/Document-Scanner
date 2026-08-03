@@ -72,17 +72,20 @@ internal class StabilityTrackerTest {
     }
 
     @Test
-    fun movementAndLossResetTheCandidate() {
+    fun briefDetectionLossKeepsTheOverlayBeforeResettingTheCandidate() {
         val tracker = StabilityTracker(null)
         val start = 1_000_000_000L
         tracker.update(corners, 1000, 800, start, false)
+        val transientLoss = tracker.update(null, 1000, 800, start + 20_000_000L, false)
+        assertEquals("detected", transientLoss.state)
+        assertContentEquals(corners, transientLoss.corners)
         assertEquals(
             "lost",
-            tracker.update(null, 1000, 800, start + 20_000_000L, false).state,
+            tracker.update(null, 1000, 800, start + 300_000_000L, false).state,
         )
         assertEquals(
             "searching",
-            tracker.update(null, 1000, 800, start + 30_000_000L, false).state,
+            tracker.update(null, 1000, 800, start + 310_000_000L, false).state,
         )
     }
 
@@ -95,7 +98,7 @@ internal class StabilityTrackerTest {
 
         val update = tracker.update(shifted, 1000, 800, start + 10_000_000L, false)
 
-        assertEquals(0.135, update.corners!![0], absoluteTolerance = 0.000001)
+        assertEquals(0.12, update.corners!![0], absoluteTolerance = 0.000001)
     }
 
     @Test

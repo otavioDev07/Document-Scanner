@@ -35,6 +35,11 @@ final class StabilityTracker {
   private var stableFrames: Int64 = 0
   private var cooldownUntil: UInt64 = 0
   private var capturedCurrentDocument = false
+  private var lastDetectedAt: UInt64 = 0
+
+  // A single failed frame is common with a live camera. Keep the current
+  // overlay briefly so the document border does not flash on and off.
+  private let lostDetectionGraceNanoseconds: UInt64 = 250_000_000
 
   init(options: [String: Any]?) {
     updateOptions(options)
@@ -61,6 +66,15 @@ final class StabilityTracker {
     autoCaptureEnabled: Bool
   ) -> StabilityUpdate {
     guard let values = flattened(corners) else {
+      if previous != nil,
+        timestamp >= lastDetectedAt,
+        timestamp - lastDetectedAt <= lostDetectionGraceNanoseconds
+      {
+        return progressUpdate(
+          timestamp: timestamp,
+          autoCaptureEnabled: autoCaptureEnabled,
+          allowCapture: false)
+      }
       let hadDocument = previous != nil
       resetCandidate()
       capturedCurrentDocument = false
@@ -70,6 +84,8 @@ final class StabilityTracker {
         stableFrames: 0,
         shouldCapture: false)
     }
+
+    lastDetectedAt = timestamp
 
     guard let prior = previous else {
       previous = values
@@ -177,6 +193,7 @@ final class StabilityTracker {
     pendingMovement = nil
     stableSince = 0
     stableFrames = 0
+    lastDetectedAt = 0
   }
 
   private func flattened(_ corners: [[String: NSNumber]]?) -> [Double]? {
@@ -204,7 +221,7 @@ final class StabilityTracker {
 
   private func smoothed(_ current: [Double]?, toward target: [Double]) -> [Double] {
     guard let current, current.count == target.count else { return target }
-    let factor = 0.35
+    let factor = 0.20
     return zip(current, target).map { source, destination in
       source + (destination - source) * factor
     }

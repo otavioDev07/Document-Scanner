@@ -42,7 +42,7 @@ class DocumentScannerPreview extends StatelessWidget {
               if (current?.corners != null)
                 TweenAnimationBuilder<List<ScannerPoint>>(
                   tween: _ScannerCornersTween(end: current!.corners!),
-                  duration: const Duration(milliseconds: 160),
+                  duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOut,
                   builder: (
                     BuildContext context,

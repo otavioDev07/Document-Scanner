@@ -43,3 +43,6 @@ document_scanner_flutter/native/Frameworks/opencv2.xcframework/
 *.zip
 *.old
 tmp/
+
+# Local development notes (not versioned).
+LOCAL_DEVELOPMENT.md

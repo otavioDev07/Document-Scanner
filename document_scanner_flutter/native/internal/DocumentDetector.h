@@ -2,6 +2,8 @@
 #define DOCUMENT_DETECTOR_H
 
 #include <opencv2/opencv.hpp>
+#include <vector>
+#include <tuple>
 
 using namespace cv;
 using namespace std;
@@ -21,7 +23,6 @@ namespace detector {
         DocumentDetector(int resizeThreshold, int imageRotation, double scale);
         DocumentDetector(int resizeThreshold, int imageRotation);
         DocumentDetector();
-
 
         virtual ~DocumentDetector();
 
@@ -58,9 +59,13 @@ namespace detector {
             double areaScaleMinFactor = 0.04;
             double minDistanceFromBorderFactor = 0.0;
 
-            int houghLinesThreshold = 0;
-            int houghLinesMinLineLength = 55;
-            int houghLinesMaxLineGap = 0;
+            // Parametros do Hough Probabilistico e Fusao Vetorial
+            int houghLinesThreshold = 40;
+            int houghLinesMinLineLength = 40;
+            int houghLinesMaxLineGap = 15;
+            double houghParallelCosine = 0.95;             // Limiar para considerar linhas paralelas na fusao
+            double houghIntersectionClusterDistance = 18.0; // Distancia maxima para agrupar intersecoes de cantos
+            int houghContourThickness = 2;                  // Espessura do contorno ao desenhar mascara do Hough
         };
 
         struct PageSplitResult {
@@ -71,34 +76,19 @@ namespace detector {
             int gutterX = -1;
             bool foundGutter = false;
         };
-        DetectOptions options;
-//        int adapThresholdBlockSize = 0; // 391
-//        int adapThresholdC = 0;          // 53
-//        int shouldNegate = 0;          // 53
-        PageSplitResult detectGutterAndSplit(const Mat& input,
-                                      float minPageWidthRatio = 0.20f,
-                                      int blurSize = 5);
 
+        DetectOptions options;
+
+        PageSplitResult detectGutterAndSplit(const Mat& input,
+                                             float minPageWidthRatio = 0.20f,
+                                             int blurSize = 5);
 
     private:
         int imageRotation = 0;
         bool isHisEqual = false;
 
-
         void preProcess(Mat src, Mat &dst);
 
-
-
-        // void findThreshSquares(cv::Mat srcGray, double scaledWidth, double scaledHeight,
-                            //    std::vector<std::vector<cv::Point>> &threshSquares);
-
-        // void findCannySquares(
-        //         cv::Mat srcGray,
-        //         double scaledWidth,
-        //         double scaledHeight,
-        //         std::vector<std::vector<cv::Point>> &cannySquares,
-        //         int indice,
-        //         std::vector<int> &indices);
         void findSquares(
                 cv::Mat srcGray,
                 double scaledWidth,
@@ -106,7 +96,7 @@ namespace detector {
                 std::vector<PointAreaMaxCosMeanCosWeight> &squares,
                 cv::Mat drawimage,
                 bool drawContours,
-                float weight  = 1.0);
+                float weight = 1.0);
 
         cv::Mat preprocessedImage(cv::Mat &image, int cannyValue, int blurValue);
 
@@ -120,6 +110,5 @@ namespace detector {
     };
 
 }
-
 
 #endif //DOCUMENT_DETECTOR_H

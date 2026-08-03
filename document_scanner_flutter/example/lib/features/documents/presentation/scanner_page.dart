@@ -21,6 +21,7 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
     options: ScannerOptions(
       autoCapture: widget.settings.autoCapture,
       diagnosticsEnabled: widget.settings.diagnosticsEnabled,
+      autoCaptureDistanceThreshold: 150,
       jpegQuality: widget.settings.jpegQuality,
     ),
   );

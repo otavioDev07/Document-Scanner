@@ -27,6 +27,11 @@ internal class StabilityTracker(options: Map<String, Any?>?) {
     private var stableFrames = 0L
     private var cooldownUntilNs = 0L
     private var capturedCurrentDocument = false
+    private var lastDetectedAtNs = 0L
+
+    // A single failed frame is common with a live camera. Keep the current
+    // overlay briefly so the document border does not flash on and off.
+    private val lostDetectionGraceNs = 250_000_000L
 
     @Synchronized
     fun updateOptions(options: Map<String, Any?>?) {
@@ -45,11 +50,24 @@ internal class StabilityTracker(options: Map<String, Any?>?) {
         autoCaptureEnabled: Boolean,
     ): StabilityUpdate {
         if (corners == null || corners.size != 8) {
+            if (
+                previous != null &&
+                timestampNs >= lastDetectedAtNs &&
+                timestampNs - lastDetectedAtNs <= lostDetectionGraceNs
+            ) {
+                return progressUpdate(
+                    timestampNs = timestampNs,
+                    autoCaptureEnabled = autoCaptureEnabled,
+                    allowCapture = false,
+                )
+            }
             val hadDocument = previous != null
             resetCandidate()
             capturedCurrentDocument = false
             return StabilityUpdate(if (hadDocument) "lost" else "searching", 0.0, 0, false)
         }
+
+        lastDetectedAtNs = timestampNs
 
         val prior = previous
         if (prior == null) {
@@ -169,11 +187,12 @@ internal class StabilityTracker(options: Map<String, Any?>?) {
         pendingMovement = null
         stableSinceNs = 0
         stableFrames = 0
+        lastDetectedAtNs = 0
     }
 
     private fun smoothed(current: DoubleArray?, target: DoubleArray): DoubleArray {
         if (current == null || current.size != target.size) return target.copyOf()
-        val factor = 0.35
+        val factor = 0.20
         return DoubleArray(target.size) { index ->
             current[index] + (target[index] - current[index]) * factor
         }
