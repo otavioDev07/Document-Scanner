@@ -5,9 +5,6 @@
 #include <vector>
 #include <string>
 
-using namespace cv;
-using namespace std;
-
 namespace detector {
 
     class DocumentDetector {
@@ -44,14 +41,13 @@ namespace detector {
         };
 
         struct Candidate {
-            vector<Point> points;
+            std::vector<cv::Point> points;
             double area;
             double maxCosine;
             double meanCosine;
             int weight;
-            string source;
+            std::string source;
 
-            // Score idêntico ao ambiente de testes
             double score() const {
                 return (area * (1.0 - maxCosine)) + (static_cast<double>(weight) * 0.01);
             }
@@ -74,16 +70,16 @@ namespace detector {
 
         virtual ~DocumentDetector();
 
-        vector<vector<cv::Point>> scanPoint();
-        vector<vector<cv::Point>> scanPoint(Mat &edged);
-        vector<vector<cv::Point>> scanPoint(Mat &edged, Mat& image);
-        vector<vector<cv::Point>> scanPoint(Mat &edged, Mat& image, bool drawContours);
+        std::vector<std::vector<cv::Point>> scanPoint();
+        std::vector<std::vector<cv::Point>> scanPoint(cv::Mat &edged);
+        std::vector<std::vector<cv::Point>> scanPoint(cv::Mat &edged, cv::Mat& image);
+        std::vector<std::vector<cv::Point>> scanPoint(cv::Mat &edged, cv::Mat& image, bool drawContours);
 
         cv::Mat resizeImage();
         cv::Mat resizeImageMax();
         cv::Mat resizeImageToSize(int size);
 
-        PageSplitResult detectGutterAndSplit(const Mat& input, float minPageWidthRatio = 0.20f, int blurSize = 5);
+        PageSplitResult detectGutterAndSplit(const cv::Mat& input, float minPageWidthRatio = 0.20f, int blurSize = 5);
 
         cv::Mat image;
         cv::Mat resizedImage;
@@ -97,21 +93,21 @@ namespace detector {
     private:
         int imageRotation = 0;
 
-        vector<Candidate> findSquares(
-            const Mat& binaryImage,
+        std::vector<Candidate> findSquares(
+            const cv::Mat& binaryImage,
             const Options& options,
             int weight,
-            const string& source
+            const std::string& source
         );
 
         bool isExcellentCandidate(
-            const vector<Candidate>& candidates,
+            const std::vector<Candidate>& candidates,
             int imageWidth,
             int imageHeight,
             const Options& options
         );
 
-        void sortCandidates(vector<Candidate>& candidates);
+        void sortCandidates(std::vector<Candidate>& candidates);
     };
 
 }

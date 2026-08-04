@@ -122,7 +122,7 @@ NSDictionary<NSString *, id> *errorResult(NSString *code, NSString *message) {
         source,
         static_cast<int>(resizeThreshold),
         0);
-    detector.options.areaScaleMinFactor = areaScaleMinFactor;
+    detector.options.minAreaFactor = areaScaleMinFactor;
     const std::vector<std::vector<cv::Point>> detected = detector.scanPoint();
     const int width = source.cols;
     const int height = source.rows;
@@ -171,7 +171,7 @@ NSDictionary<NSString *, id> *errorResult(NSString *code, NSString *message) {
         source,
         static_cast<int>(resizeThreshold),
         0);
-    detector.options.areaScaleMinFactor = areaScaleMinFactor;
+    detector.options.minAreaFactor = areaScaleMinFactor;
     const std::vector<std::vector<cv::Point>> detected = detector.scanPoint();
     if (!detected.empty() && detected.front().size() == 4) {
       result = normalizedCorners(detected.front(), width, height);

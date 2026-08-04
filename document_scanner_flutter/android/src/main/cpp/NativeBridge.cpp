@@ -57,7 +57,7 @@ Java_br_com_dinheironanota_document_1scanner_1flutter_NativeDocumentProcessor_na
         }
 
         detector::DocumentDetector detector(source, resizeThreshold, 0);
-        detector.options.areaScaleMinFactor = areaScaleMinFactor;
+        detector.options.minAreaFactor = areaScaleMinFactor;
         const auto detected = detector.scanPoint();
         source.release();
 
@@ -125,7 +125,7 @@ Java_br_com_dinheironanota_document_1scanner_1flutter_NativeDocumentProcessor_na
         }
 
         detector::DocumentDetector detector(source, resizeThreshold, rotationDegrees);
-        detector.options.areaScaleMinFactor = areaScaleMinFactor;
+        detector.options.minAreaFactor = areaScaleMinFactor;
         const auto detected = detector.scanPoint();
         source.release();
         if (detected.empty() || detected.front().size() != 4) {
