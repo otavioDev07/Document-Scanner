@@ -105,7 +105,7 @@ final class DocumentScannerController extends ChangeNotifier {
         if (selected == null) {
           throw const ScannerException(
             'NO_DOCUMENT',
-            'No document corners are available to crop',
+            'Nenhum vértice de documento está disponível para realizar o corte.',
           );
         }
         late final List<ScannerPoint> validated;
@@ -114,7 +114,7 @@ final class DocumentScannerController extends ChangeNotifier {
         } on FormatException catch (error) {
           throw ScannerException(
             'INVALID_ARGUMENT',
-            error.message,
+            'Parâmetros de corte inválidos: ${error.message}',
             error.source,
           );
         }
@@ -161,7 +161,7 @@ final class DocumentScannerController extends ChangeNotifier {
         _state != ScannerCameraState.paused) {
       throw ScannerException(
         'INVALID_STATE',
-        'Cannot start preview while scanner is ${_state.name}',
+        'Não foi possível iniciar a visualização porque a câmera está no estado: ${_translateState(_state)}.',
       );
     }
     _ensureEventSubscription();
@@ -193,7 +193,7 @@ final class DocumentScannerController extends ChangeNotifier {
     if (_state != ScannerCameraState.previewing) {
       throw ScannerException(
         'INVALID_STATE',
-        'Cannot pause preview while scanner is ${_state.name}',
+        'Não foi possível pausar a visualização porque a câmera está no estado: ${_translateState(_state)}.',
       );
     }
     await _platform.pausePreview();
@@ -205,7 +205,7 @@ final class DocumentScannerController extends ChangeNotifier {
     if (_state != ScannerCameraState.paused) {
       throw ScannerException(
         'INVALID_STATE',
-        'Cannot resume preview while scanner is ${_state.name}',
+        'Não foi possível retomar a visualização porque a câmera está no estado: ${_translateState(_state)}.',
       );
     }
     _previewInfo = await _platform.resumePreview();
@@ -214,7 +214,7 @@ final class DocumentScannerController extends ChangeNotifier {
   }
 
   Future<CameraPreviewInfo> switchCamera() async {
-    _ensurePreviewing('switch camera');
+    _ensurePreviewing('alternar a câmera');
     _previewInfo = await _platform.switchCamera();
     _lastDetection = null;
     _detectionState = ScannerDetectionState.searching;
@@ -223,7 +223,16 @@ final class DocumentScannerController extends ChangeNotifier {
   }
 
   Future<CaptureResult> capture() async {
-    _ensurePreviewing('capture');
+    _ensureNotDisposed();
+    
+    // Permite disparar se a câmera estiver em preview ou registrando falha momentânea no detector
+    if (_state != ScannerCameraState.previewing && _state != ScannerCameraState.error) {
+      throw ScannerException(
+        'INVALID_STATE',
+        'Não foi possível capturar a imagem porque a câmera está no estado: ${_translateState(_state)}.',
+      );
+    }
+
     _setState(ScannerCameraState.capturing);
     try {
       final CaptureResult result = await _platform.capture();
@@ -238,12 +247,12 @@ final class DocumentScannerController extends ChangeNotifier {
   }
 
   Future<void> setFlashMode(ScannerFlashMode mode) async {
-    _ensurePreviewing('set flash');
+    _ensurePreviewing('alterar o modo do flash');
     await _platform.setFlashMode(mode);
   }
 
   Future<void> setAutoCapture(bool enabled) async {
-    _ensurePreviewing('set auto capture');
+    _ensurePreviewing('configurar a captura automática');
     await _platform.setAutoCapture(enabled);
   }
 
@@ -264,7 +273,7 @@ final class DocumentScannerController extends ChangeNotifier {
     if (_state != ScannerCameraState.ready) {
       throw ScannerException(
         'INVALID_STATE',
-        'Scanner is not ready: ${_state.name}',
+        'O digitalizador não está pronto para o processamento. Estado atual: ${_translateState(_state)}.',
       );
     }
     _setState(ScannerCameraState.processing);
@@ -284,9 +293,12 @@ final class DocumentScannerController extends ChangeNotifier {
         if (isDisposed) return;
         _lastError = error is ScannerException
             ? error
-            : ScannerException('NATIVE_EVENT_ERROR', '$error');
+            : ScannerException(
+                'NATIVE_EVENT_ERROR', 
+                'Ocorreu uma falha na comunicação nativa: $error'
+              );
         _detectionState = ScannerDetectionState.error;
-        _setState(ScannerCameraState.error);
+        // Não rebaixamos o estado da câmera para "error" para evitar o bloqueio da UI
       },
     );
   }
@@ -316,9 +328,13 @@ final class DocumentScannerController extends ChangeNotifier {
       case ScannerEventType.error:
         _lastError = ScannerException(
           event.errorCode ?? 'NATIVE_EVENT_ERROR',
-          event.errorMessage ?? 'Native scanner event failed',
+          _translateErrorMessage(
+            event.errorCode, 
+            event.errorMessage ?? 'Ocorreu uma falha no evento do digitalizador.',
+          ),
         );
-        _state = ScannerCameraState.error;
+        // Atualiza a detecção para erro, mas preserva a câmera ativa para permitir foto manual
+        _detectionState = ScannerDetectionState.error;
       case ScannerEventType.cameraState:
       case ScannerEventType.documentDetected:
       case ScannerEventType.documentLost:
@@ -333,10 +349,10 @@ final class DocumentScannerController extends ChangeNotifier {
 
   void _ensurePreviewing(String operation) {
     _ensureNotDisposed();
-    if (_state != ScannerCameraState.previewing) {
+    if (_state != ScannerCameraState.previewing && _state != ScannerCameraState.error) {
       throw ScannerException(
         'INVALID_STATE',
-        'Cannot $operation while scanner is ${_state.name}',
+        'Não é possível $operation enquanto a câmera estiver no estado: ${_translateState(_state)}.',
       );
     }
   }
@@ -345,7 +361,7 @@ final class DocumentScannerController extends ChangeNotifier {
     if (isDisposed) {
       throw const ScannerException(
         'DISPOSED',
-        'Scanner controller is disposed',
+        'O controlador do digitalizador foi encerrado e não pode mais ser utilizado.',
       );
     }
   }
@@ -353,6 +369,48 @@ final class DocumentScannerController extends ChangeNotifier {
   void _setState(ScannerCameraState value) {
     _state = value;
     notifyListeners();
+  }
+
+  String _translateState(ScannerCameraState state) {
+    switch (state) {
+      case ScannerCameraState.uninitialized:
+        return 'não inicializado';
+      case ScannerCameraState.initializing:
+        return 'inicializando';
+      case ScannerCameraState.ready:
+        return 'pronto';
+      case ScannerCameraState.starting:
+        return 'iniciando câmera';
+      case ScannerCameraState.previewing:
+        return 'em visualização';
+      case ScannerCameraState.paused:
+        return 'pausado';
+      case ScannerCameraState.capturing:
+        return 'capturando imagem';
+      case ScannerCameraState.processing:
+        return 'processando';
+      case ScannerCameraState.error:
+        return 'com falha na detecção';
+      case ScannerCameraState.disposed:
+        return 'desconectado';
+    }
+  }
+
+  String _translateErrorMessage(String? code, String originalMessage) {
+    switch (code) {
+      case 'NO_DOCUMENT':
+        return 'Nenhum documento válido foi identificado na imagem.';
+      case 'TOO_DARK':
+        return 'O ambiente está muito escuro para a leitura.';
+      case 'WRONG_ANGLE':
+        return 'Posicione a câmera de forma paralela ao documento.';
+      case 'DOCUMENT_TOO_SMALL':
+        return 'Aproxime a câmera do documento.';
+      case 'LOW_STABILITY':
+        return 'Mantenha o dispositivo firme durante a leitura.';
+      default:
+        return originalMessage;
+    }
   }
 
   Future<void> close() async {

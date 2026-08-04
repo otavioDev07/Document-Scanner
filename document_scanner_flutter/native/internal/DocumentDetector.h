@@ -8,9 +8,6 @@
 using namespace cv;
 using namespace std;
 
-template <class T>
-T& make_ref(T&& x) { return x; }
-
 typedef std::tuple<std::vector<cv::Point>, double, double, double, int> PointAreaMaxCosMeanCosWeight;
 
 namespace detector {
@@ -49,23 +46,29 @@ namespace detector {
             float morphologyAnchorSize = 4.0f;
             float dilateAnchorSize = 3.0f;
             float thresh = 160.0f;
-            float threshMax = 256.0f;
+            float threshMax = 255.0f;
             float medianBlurValue = 9.0f;
             float bilateralFilterValue = 18.0f;
-            double contoursApproxEpsilonFactor = 0.02;
-            double expectedMaxCosine = 0.4;
-            double expectedOptimalMaxCosine = 0.3;
+            
+            // Parâmetros estritamente calibrados no laboratório de testes
+            double contoursApproxEpsilonFactor = 0.05;
+            double expectedMaxCosine = 0.45;
+            double expectedOptimalMaxCosine = 0.25;
             double expectedAreaFactor = 0.20;
-            double areaScaleMinFactor = 0.04;
+            double areaScaleMinFactor = 0.10;
             double minDistanceFromBorderFactor = 0.0;
 
-            // Parametros do Hough Probabilistico e Fusao Vetorial
+            // Filtros de Proporção (Aspect Ratio)
+            double minAspectRatio = 1.18;                  // Rejeita formas quadradas/QR codes (~1.0)
+            double maxAspectRatio = 6.00;                  // Rejeita faixas/tiras verticais e horizontais anômalas
+
+            // Parâmetros do Hough Probabilístico e Fusão Vetorial
             int houghLinesThreshold = 40;
             int houghLinesMinLineLength = 40;
             int houghLinesMaxLineGap = 15;
-            double houghParallelCosine = 0.95;             // Limiar para considerar linhas paralelas na fusao
-            double houghIntersectionClusterDistance = 18.0; // Distancia maxima para agrupar intersecoes de cantos
-            int houghContourThickness = 2;                  // Espessura do contorno ao desenhar mascara do Hough
+            double houghParallelCosine = 0.95;             // Limiar para considerar linhas paralelas na fusão
+            double houghIntersectionClusterDistance = 18.0; // Distância máxima para agrupar interseções de cantos
+            int houghContourThickness = 2;                  // Espessura do contorno ao desenhar máscara do Hough
         };
 
         struct PageSplitResult {
@@ -85,9 +88,6 @@ namespace detector {
 
     private:
         int imageRotation = 0;
-        bool isHisEqual = false;
-
-        void preProcess(Mat src, Mat &dst);
 
         void findSquares(
                 cv::Mat srcGray,
@@ -97,16 +97,6 @@ namespace detector {
                 cv::Mat drawimage,
                 bool drawContours,
                 float weight = 1.0);
-
-        cv::Mat preprocessedImage(cv::Mat &image, int cannyValue, int blurValue);
-
-        cv::Point choosePoint(cv::Point center, std::vector<cv::Point> &points, int type);
-
-        std::vector<cv::Point> selectPoints(std::vector<cv::Point> points);
-
-        std::vector<cv::Point> sortPointClockwise(std::vector<cv::Point> vector);
-
-        long long pointSideLine(cv::Point &lineP1, cv::Point &lineP2, cv::Point &point);
     };
 
 }
