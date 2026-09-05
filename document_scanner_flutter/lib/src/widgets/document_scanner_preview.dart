@@ -15,6 +15,7 @@ class DocumentScannerPreview extends StatelessWidget {
     this.child,
     this.detection,
     this.fit = BoxFit.cover,
+    this.showOverlay = false,
   });
 
   final DocumentScannerController controller;
@@ -24,6 +25,10 @@ class DocumentScannerPreview extends StatelessWidget {
   final Widget? child;
   final DetectionResult? detection;
   final BoxFit fit;
+
+  /// Live contours are optional because preview candidates are intentionally
+  /// lightweight and may differ from the high-resolution capture result.
+  final bool showOverlay;
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -39,7 +44,7 @@ class DocumentScannerPreview extends StatelessWidget {
                 _NativeTexturePreview(info: preview, fit: fit)
               else
                 child ?? const ColoredBox(color: Colors.black),
-              if (current?.corners != null)
+              if (showOverlay && current?.corners != null)
                 TweenAnimationBuilder<List<ScannerPoint>>(
                   tween: _ScannerCornersTween(end: current!.corners!),
                   duration: const Duration(milliseconds: 220),
@@ -65,6 +70,15 @@ class DocumentScannerPreview extends StatelessWidget {
                     handleRadius: 0,
                   ),
                 ),
+              Positioned(
+                top: 24,
+                left: 24,
+                right: 24,
+                child: _ScannerStatusBanner(
+                  message: _statusMessage(controller),
+                  color: _statusColor(controller),
+                ),
+              ),
               if (controller.detectionState ==
                       ScannerDetectionState.stabilizing ||
                   controller.detectionState == ScannerDetectionState.stable)
@@ -83,6 +97,32 @@ class DocumentScannerPreview extends StatelessWidget {
         },
       );
 
+  static String _statusMessage(DocumentScannerController controller) {
+    if (controller.documentBlurred) {
+      return 'Imagem instável. Mantenha a câmera firme.';
+    }
+    return switch (controller.detectionState) {
+      ScannerDetectionState.detected ||
+      ScannerDetectionState.stabilizing =>
+        'Cupom localizado. Mantenha a mão estável.',
+      ScannerDetectionState.stable => 'Cupom estável. Pronto para capturar.',
+      ScannerDetectionState.capturing ||
+      ScannerDetectionState.processing => 'Processando cupom…',
+      ScannerDetectionState.error => 'Não foi possível analisar a imagem.',
+      ScannerDetectionState.searching || ScannerDetectionState.lost =>
+        'Buscando cupom, aguarde com a mão estável…',
+    };
+  }
+
+  static Color _statusColor(DocumentScannerController controller) {
+    if (controller.documentBlurred) return const Color(0xE5B3261E);
+    return switch (controller.detectionState) {
+      ScannerDetectionState.stable => const Color(0xE5007D62),
+      ScannerDetectionState.error => const Color(0xE5B3261E),
+      _ => const Color(0xCC1D252B),
+    };
+  }
+
   static Color _stateColor(ScannerDetectionState state) => switch (state) {
         ScannerDetectionState.detected => const Color(0xFFFFC107),
         ScannerDetectionState.stabilizing => const Color(0xFFFF9800),
@@ -95,6 +135,37 @@ class DocumentScannerPreview extends StatelessWidget {
         ScannerDetectionState.lost =>
           Colors.white54,
       };
+}
+
+class _ScannerStatusBanner extends StatelessWidget {
+  const _ScannerStatusBanner({required this.message, required this.color});
+
+  final String message;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(Icons.document_scanner_outlined, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 final class _ScannerCornersTween extends Tween<List<ScannerPoint>> {

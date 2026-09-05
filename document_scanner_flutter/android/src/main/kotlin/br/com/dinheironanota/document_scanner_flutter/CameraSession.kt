@@ -65,6 +65,7 @@ internal class CameraSession(
     private var stabilityTracker = StabilityTracker(null)
     private var pendingStart: ((Result<Map<String, Any>>) -> Unit)? = null
     private var lastHadDocument = false
+    private var blurWarningVisible = false
     private var previewAnnouncementPending = false
 
     fun start(
@@ -365,7 +366,7 @@ internal class CameraSession(
             val rotation = image.imageInfo.rotationDegrees
             val resizeThreshold = options.number("previewResizeThreshold", 200.0).toInt().coerceAtLeast(0)
             val areaScaleMinFactor = options.number("previewAreaScaleMinFactor", 0.04).coerceIn(0.0, 1.0)
-            val corners = processor.detectFrame(
+            val detection = processor.detectFrame(
                 width = image.width,
                 height = image.height,
                 chromaPixelStride = planes[1].pixelStride,
@@ -383,17 +384,47 @@ internal class CameraSession(
             val orientedWidth = if (swapsDimensions) image.height else image.width
             val orientedHeight = if (swapsDimensions) image.width else image.height
             val stability = stabilityTracker.update(
-                corners,
+                detection.corners,
                 orientedWidth,
                 orientedHeight,
                 timestampNs,
                 autoCaptureEnabled,
             )
             val elapsedMs = (System.nanoTime() - startedNs) / 1_000_000.0
-            metrics.recordProcessed(elapsedMs, corners != null)
+            metrics.recordProcessed(elapsedMs, detection.corners != null)
 
             val displayedCorners = stability.corners
             if (displayedCorners == null) {
+                val rejectedForBlur = detection.source == "fft_rejected"
+                // FFT is evaluated on a provisional warp for every frame. A
+                // first-frame rejection may be a false quadrilateral, so only
+                // expose a blur warning after this session had an accepted
+                // document and subsequently lost focus/motion stability.
+                if (rejectedForBlur && lastHadDocument && !blurWarningVisible) {
+                    blurWarningVisible = true
+                    emit(
+                        event(
+                            eventName = "documentBlurred",
+                            state = "searching",
+                            extra = frameMetadata(
+                                orientedWidth,
+                                orientedHeight,
+                                elapsedMs,
+                                stability,
+                                detection,
+                            ) + mapOf("documentBlurred" to true),
+                        ),
+                    )
+                } else if (!rejectedForBlur && blurWarningVisible) {
+                    blurWarningVisible = false
+                    emit(
+                        event(
+                            eventName = "documentBlurCleared",
+                            state = "searching",
+                            extra = mapOf("documentBlurred" to false),
+                        ),
+                    )
+                }
                 if (lastHadDocument || stability.state == "lost") {
                     lastHadDocument = false
                     emit(
@@ -405,6 +436,7 @@ internal class CameraSession(
                                 orientedHeight,
                                 elapsedMs,
                                 stability,
+                                detection,
                             ),
                         ),
                     )
@@ -421,6 +453,7 @@ internal class CameraSession(
             }
 
             lastHadDocument = true
+            blurWarningVisible = false
             val cornerMaps = List(4) { index ->
                 mapOf(
                     "x" to displayedCorners[index * 2],
@@ -436,6 +469,7 @@ internal class CameraSession(
                         orientedHeight,
                         elapsedMs,
                         stability,
+                        detection,
                     ) + mapOf("corners" to cornerMaps),
                 ),
             )
@@ -454,13 +488,15 @@ internal class CameraSession(
         orientedHeight: Int,
         elapsedMs: Double,
         stability: StabilityUpdate,
+        detection: CascadeDetection? = null,
     ): Map<String, Any?> = buildMap {
         put("imageWidth", orientedWidth)
         put("imageHeight", orientedHeight)
         put("rotationDegrees", 0)
         put("mirrored", lensFacing == CameraSelector.LENS_FACING_FRONT)
-        put("source", "camera_contour_detector")
-        put("confidence", null)
+        put("source", detection?.source ?: "cascade")
+        put("confidence", detection?.confidence)
+        put("fftScore", detection?.fftScore)
         put("stability", stability.progress)
         put("stableFrames", stability.stableFrames)
         put("processingTimeMs", elapsedMs)

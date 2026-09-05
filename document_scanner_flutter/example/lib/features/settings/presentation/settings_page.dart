@@ -3,10 +3,27 @@ import 'package:flutter/material.dart';
 import '../../../core/localization/legacy_localizations.dart';
 import '../application/scanner_settings_controller.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, required this.controller});
 
   final ScannerSettingsController controller;
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late final TextEditingController _cloudDestination = TextEditingController(
+    text: widget.controller.cloudDestination,
+  );
+
+  ScannerSettingsController get controller => widget.controller;
+
+  @override
+  void dispose() {
+    _cloudDestination.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +106,49 @@ class SettingsPage extends StatelessWidget {
                   },
                 ),
               ),
+              const Divider(),
+              const _SectionTitle('Destino da Imagem'),
+              RadioGroup<ImageDestination>(
+                groupValue: controller.imageDestination,
+                onChanged: (ImageDestination? value) {
+                  if (value != null) controller.setImageDestination(value);
+                },
+                child: const Column(
+                  children: <Widget>[
+                    RadioListTile<ImageDestination>(
+                      title: Text('INTERNO'),
+                      subtitle: Text(
+                        'Salva a imagem processada na biblioteca local do aplicativo.',
+                      ),
+                      value: ImageDestination.internal,
+                    ),
+                    RadioListTile<ImageDestination>(
+                      title: Text('NUVEM'),
+                      subtitle: Text(
+                        'Enfileira o envio HTTP/Multipart sem bloquear a câmera.',
+                      ),
+                      value: ImageDestination.cloud,
+                    ),
+                  ],
+                ),
+              ),
+              if (controller.imageDestination == ImageDestination.cloud)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: TextField(
+                    controller: _cloudDestination,
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      labelText: 'Link, pasta do Drive ou Webhook',
+                      hintText: 'https://seu-endpoint.example/upload',
+                      helperText:
+                          'Informe um endpoint HTTP(S) que aceite multipart/form-data.',
+                    ),
+                    onChanged: controller.setCloudDestination,
+                  ),
+                ),
               const Divider(),
               const AboutListTile(
                 applicationName: 'Document Scanner',

@@ -23,6 +23,7 @@ allprojects {
 
 plugins {
     id("com.android.library")
+    id("com.chaquo.python") version "17.0.0"
 }
 
 android {
@@ -47,6 +48,13 @@ android {
     defaultConfig {
         minSdk = 24
 
+        // The accuracy-validation build intentionally embeds CPython. Restricting
+        // it to modern devices avoids packaging four copies of both Python and
+        // OpenCV in a universal APK.
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-std=c++20")
@@ -60,7 +68,12 @@ android {
     }
 
     packaging {
-        jniLibs.excludes += setOf("lib/**/libc++_shared.so")
+        jniLibs.excludes += setOf(
+            "lib/**/libc++_shared.so",
+            "lib/armeabi-v7a/**",
+            "lib/x86/**",
+            "lib/x86_64/**",
+        )
     }
 
     externalNativeBuild {
@@ -87,6 +100,21 @@ android {
     }
 }
 
+chaquopy {
+    defaultConfig {
+        // OpenCV's Android wheel is currently available for CPython 3.10.
+        version = "3.10"
+        val pyenvPython = System.getProperty("user.home") + "/.pyenv/versions/3.10.19/bin/python3.10"
+        if (file(pyenvPython).isFile) {
+            buildPython(pyenvPython)
+        }
+        pip {
+            install("numpy==1.23.3")
+            install("opencv-python-headless==4.5.1.48")
+        }
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
@@ -101,6 +129,7 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$cameraXVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.0.0")

@@ -2,6 +2,7 @@ package br.com.dinheironanota.document_scanner_flutter
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.content.Context
 import java.io.File
 import java.io.FileNotFoundException
 import java.nio.ByteBuffer
@@ -9,20 +10,49 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-internal class NativeDocumentProcessor {
+internal class NativeDocumentProcessor(context: Context) {
     init {
         System.loadLibrary("document_scanner_flutter")
     }
 
-    fun detect(sourcePath: String, options: Map<String, Any?>?): Map<String, Any?> {
+    private val cascade by lazy { PythonCascadeProcessor(context.applicationContext) }
+
+    fun detect(
+        sourcePath: String,
+        options: Map<String, Any?>?,
+        previewCorners: List<Map<String, Number>>? = null,
+    ): Map<String, Any?> {
         val bitmap = OrientedBitmapDecoder.decode(sourcePath)
         try {
             val resizeThreshold = options.number("detectionResizeThreshold", 1200.0)
                 .roundToInt().coerceAtLeast(0)
             val areaScaleMinFactor = options.number("areaScaleMinFactor", 0.04)
                 .coerceIn(0.0, 1.0)
-            val raw = nativeDetect(bitmap, resizeThreshold, areaScaleMinFactor)
-            val corners = raw?.let { points ->
+            val encodedBitmap = cascade.encodeBitmap(bitmap)
+            val hint = previewCorners?.toPixelCoordinates(bitmap.width, bitmap.height)
+            // A stable preview candidate is cheap to validate at capture size:
+            // warp/FFT first. Only a rejected hint pays for a full C++ search.
+            val hintedDetection = hint?.let { points ->
+                cascade.processEncodedBitmap(
+                    encodedBitmap = encodedBitmap,
+                    rdpCorners = points,
+                    rdpScore = geometryScore(points, bitmap.width, bitmap.height),
+                )
+            }
+            val detection = if (hintedDetection?.corners != null) {
+                hintedDetection
+            } else {
+                val raw = nativeDetect(bitmap, resizeThreshold, areaScaleMinFactor)
+                cascade.processEncodedBitmap(
+                    encodedBitmap = encodedBitmap,
+                    rdpCorners = raw,
+                    rdpScore = geometryScore(raw, bitmap.width, bitmap.height),
+                )
+            }
+            // Both detectors and the eventual crop must use this exact
+            // EXIF-oriented bitmap. Passing sourcePath to Python made cv2
+            // decode an unrotated JPEG while C++ used the rotated bitmap.
+            val corners = detection.corners?.let { points ->
                 require(points.size == 8) { "Native detector returned an invalid point count" }
                 List(4) { index ->
                     mapOf(
@@ -37,8 +67,9 @@ internal class NativeDocumentProcessor {
                 "imageHeight" to bitmap.height,
                 "rotationDegrees" to 0,
                 "mirrored" to false,
-                "source" to "legacy_contour_detector",
-                "confidence" to null,
+                "source" to detection.source,
+                "confidence" to detection.confidence,
+                "fftScore" to detection.fftScore,
             )
         } finally {
             bitmap.recycle()
@@ -154,20 +185,57 @@ internal class NativeDocumentProcessor {
         rotationDegrees: Int,
         resizeThreshold: Int,
         areaScaleMinFactor: Double,
-    ): DoubleArray? = nativeDetectYuv(
-        width,
-        height,
-        chromaPixelStride,
-        yBuffer,
-        yRowStride,
-        uBuffer,
-        uRowStride,
-        vBuffer,
-        vRowStride,
-        rotationDegrees,
-        resizeThreshold,
-        areaScaleMinFactor,
-    )
+    ): CascadeDetection {
+        // nativeDetectYuv is a preview-oriented API: its C++ bridge returns
+        // normalized coordinates so the Flutter overlay can consume them.
+        // The cascade, however, performs geometry, warping and consensus in
+        // image-pixel coordinates. Keep that conversion at this boundary so
+        // every Python engine shares one coordinate system.
+        val normalizedRdpCorners = nativeDetectYuv(
+            width,
+            height,
+            chromaPixelStride,
+            yBuffer,
+            yRowStride,
+            uBuffer,
+            uRowStride,
+            vBuffer,
+            vRowStride,
+            rotationDegrees,
+            resizeThreshold,
+            areaScaleMinFactor,
+        )
+        val swapsDimensions = rotationDegrees == 90 || rotationDegrees == 270
+        val orientedWidth = if (swapsDimensions) height else width
+        val orientedHeight = if (swapsDimensions) width else height
+        val rdpCorners = normalizedRdpCorners?.toPixelCoordinates(
+            width = orientedWidth,
+            height = orientedHeight,
+        )
+        val detection = cascade.processFrame(
+            yBuffer = yBuffer,
+            uBuffer = uBuffer,
+            vBuffer = vBuffer,
+            width = width,
+            height = height,
+            yRowStride = yRowStride,
+            uRowStride = uRowStride,
+            vRowStride = vRowStride,
+            chromaPixelStride = chromaPixelStride,
+            rotationDegrees = rotationDegrees,
+            rdpCorners = rdpCorners,
+            rdpScore = geometryScore(rdpCorners, orientedWidth, orientedHeight),
+        )
+        // The controller and DocumentOverlay use normalized preview points.
+        // Python candidates are pixels (including Hough and Watershed), so
+        // normalize its selected result before it reaches stability/UI.
+        return detection.copy(
+            corners = detection.corners?.toNormalizedCoordinates(
+                width = orientedWidth,
+                height = orientedHeight,
+            ),
+        )
+    }
 
     private external fun nativeDetect(
         sourceBitmap: Bitmap,
@@ -206,6 +274,63 @@ internal class NativeDocumentProcessor {
 
     private fun distance(first: PixelPoint, second: PixelPoint): Double =
         hypot(first.x - second.x, first.y - second.y)
+
+    private fun DoubleArray.toPixelCoordinates(width: Int, height: Int): DoubleArray {
+        require(size == 8) { "A document quadrilateral must contain four points" }
+        return DoubleArray(size) { index ->
+            val dimension = if (index % 2 == 0) width else height
+            (this[index] * dimension).coerceIn(0.0, dimension.toDouble())
+        }
+    }
+
+    private fun List<Map<String, Number>>.toPixelCoordinates(
+        width: Int,
+        height: Int,
+    ): DoubleArray? {
+        if (size != 4 || width <= 0 || height <= 0) return null
+        val result = DoubleArray(8)
+        for (coordinate in result.indices) {
+            val point = get(coordinate / 2)
+            val value = point[if (coordinate % 2 == 0) "x" else "y"]?.toDouble()
+                ?: return null
+            val dimension = if (coordinate % 2 == 0) width else height
+            result[coordinate] = (value * dimension).coerceIn(0.0, dimension.toDouble())
+        }
+        return result
+    }
+
+    private fun DoubleArray.toNormalizedCoordinates(width: Int, height: Int): DoubleArray {
+        require(size == 8) { "A document quadrilateral must contain four points" }
+        require(width > 0 && height > 0) { "Preview dimensions must be positive" }
+        return DoubleArray(size) { index ->
+            val dimension = if (index % 2 == 0) width else height
+            (this[index] / dimension).coerceIn(0.0, 1.0)
+        }
+    }
+
+    /** Same normalized area × orthogonality score used by pipeline.sh. */
+    private fun geometryScore(points: DoubleArray?, width: Int, height: Int): Double {
+        if (points == null || points.size != 8 || width <= 0 || height <= 0) return 0.0
+        var twiceArea = 0.0
+        var maxCosine = 0.0
+        for (index in 0 until 4) {
+            val next = (index + 1) % 4
+            twiceArea += points[index * 2] * points[next * 2 + 1] -
+                points[next * 2] * points[index * 2 + 1]
+
+            val previous = (index + 3) % 4
+            val ax = points[previous * 2] - points[index * 2]
+            val ay = points[previous * 2 + 1] - points[index * 2 + 1]
+            val bx = points[next * 2] - points[index * 2]
+            val by = points[next * 2 + 1] - points[index * 2 + 1]
+            val divisor = hypot(ax, ay) * hypot(bx, by)
+            if (divisor > 1e-5) {
+                maxCosine = max(maxCosine, kotlin.math.abs((ax * bx + ay * by) / divisor))
+            }
+        }
+        val relativeArea = kotlin.math.abs(twiceArea) / 2.0 / (width.toDouble() * height)
+        return relativeArea * (1.0 - maxCosine)
+    }
 
     private fun Map<String, Any?>?.number(name: String, fallback: Double): Double =
         (this?.get(name) as? Number)?.toDouble() ?: fallback

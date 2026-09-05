@@ -46,7 +46,15 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
       if (event.type == ScannerEventType.captureCompleted &&
           event.automatic &&
           event.capture != null) {
-        unawaited(_useCameraCapture(event.capture!, automatic: true));
+        final List<ScannerPoint>? previewCorners =
+            _controller.lastDetection?.corners;
+        unawaited(
+          _useCameraCapture(
+            event.capture!,
+            automatic: true,
+            previewCorners: previewCorners,
+          ),
+        );
       }
       if (event.type == ScannerEventType.error && mounted) {
         setState(() => _error = event.errorMessage ?? event.errorCode);
@@ -89,7 +97,13 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
       _error = null;
     });
     try {
-      await _useCameraCapture(await _controller.capture(), automatic: false);
+      final List<ScannerPoint>? previewCorners =
+          _controller.lastDetection?.corners;
+      await _useCameraCapture(
+        await _controller.capture(),
+        automatic: false,
+        previewCorners: previewCorners,
+      );
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     } finally {
@@ -100,6 +114,7 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
   Future<void> _useCameraCapture(
     CaptureResult capture, {
     required bool automatic,
+    List<ScannerPoint>? previewCorners,
   }) async {
     if (!_cameraActive || _handlingCapture) return;
     _handlingCapture = true;
@@ -109,13 +124,14 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
       if (mounted) setState(() => _cameraActive = false);
       final DetectionResult detection = await _controller.detectDocument(
         capture.path,
+        previewCorners: previewCorners,
       );
       if (!mounted) return;
       if (automatic) {
         final List<ScannerPoint>? corners = detection.corners;
         if (corners == null) {
           await _resumeAfterAutomaticCaptureFailure(
-            'O documento se moveu durante a captura. Tente mantê-lo estável.',
+            _detectionFailureMessage(detection),
           );
           return;
         }
@@ -123,7 +139,7 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
           capture.path,
           corners: corners,
         );
-        if (mounted) Navigator.pop(context, result);
+        if (mounted) await _completeProcessedImage(result);
         return;
       }
       setState(() {
@@ -131,8 +147,7 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
         _detection = detection;
         _editedCorners = detection.corners ?? _fallbackCorners;
         if (!detection.documentFound) {
-          _error =
-              'Bordas não detectadas. Ajuste os quatro cantos manualmente.';
+          _error = _detectionFailureMessage(detection);
         }
       });
     } catch (error) {
@@ -225,6 +240,21 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _completeProcessedImage(CropResult result) async {
+    if (widget.settings.imageDestination == ImageDestination.internal) {
+      if (mounted) Navigator.pop(context, result);
+      return;
+    }
+    final String destination = widget.settings.cloudDestination.trim();
+    if (destination.isEmpty) {
+      throw const FormatException(
+        'Configure um endpoint de nuvem antes de enviar a imagem.',
+      );
+    }
+    await _controller.enqueueImageUpload(result.path, destination);
+    if (mounted) Navigator.pop(context);
   }
 
   Future<void> _toggleAutoCapture() async {
@@ -359,6 +389,8 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
                     color: Colors.black,
                     child: _cameraActive
                         ? DocumentScannerPreview(controller: _controller)
+                        : _handlingCapture
+                        ? const _ProcessingCoupon()
                         : _crop != null
                         ? Image.file(File(_crop!.path), fit: BoxFit.contain)
                         : _editedCorners != null && _selected != null
@@ -445,9 +477,28 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
           const SizedBox(width: 12),
           Expanded(
             child: FilledButton.icon(
-              onPressed: _busy ? null : () => Navigator.pop(context, _crop),
-              icon: const Icon(Icons.check),
-              label: Text(context.l10n.text('save', fallback: 'Usar página')),
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      setState(() => _busy = true);
+                      try {
+                        await _completeProcessedImage(_crop!);
+                      } catch (error) {
+                        if (mounted) setState(() => _error = '$error');
+                      } finally {
+                        if (mounted) setState(() => _busy = false);
+                      }
+                    },
+              icon: Icon(
+                widget.settings.imageDestination == ImageDestination.cloud
+                    ? Icons.cloud_upload_outlined
+                    : Icons.check,
+              ),
+              label: Text(
+                widget.settings.imageDestination == ImageDestination.cloud
+                    ? 'Enviar'
+                    : context.l10n.text('save', fallback: 'Usar página'),
+              ),
             ),
           ),
         ],
@@ -487,4 +538,31 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
     ScannerPoint(0.95, 0.95),
     ScannerPoint(0.05, 0.95),
   ];
+
+  static String _detectionFailureMessage(DetectionResult detection) =>
+      detection.source == 'fft_rejected'
+          ? 'A imagem está borrada ou desfocada. Mantenha a câmera firme e tente novamente.'
+          : 'O documento se moveu durante a captura. Tente mantê-lo estável.';
+}
+
+class _ProcessingCoupon extends StatelessWidget {
+  const _ProcessingCoupon();
+
+  @override
+  Widget build(BuildContext context) => const Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox.square(
+              dimension: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            SizedBox(width: 12),
+            Text(
+              'Processando cupom…',
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          ],
+        ),
+      );
 }

@@ -80,6 +80,44 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('cloud image destination reveals and persists its endpoint', (
+    WidgetTester tester,
+  ) async {
+    final MemoryScannerSettingsStore store = MemoryScannerSettingsStore();
+    final ScannerSettingsController settings = ScannerSettingsController(
+      store: store,
+    );
+    addTearDown(settings.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(home: SettingsPage(controller: settings)),
+    );
+    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.widgetWithText(RadioListTile<ImageDestination>, 'NUVEM'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(settings.imageDestination, ImageDestination.cloud);
+    expect(find.byType(TextField), findsOneWidget);
+    await tester.enterText(
+      find.byType(TextField),
+      ' https://example.test/upload ',
+    );
+    await tester.pump();
+    expect(settings.cloudDestination, 'https://example.test/upload');
+
+    final ScannerSettingsController restored = ScannerSettingsController(
+      store: store,
+    );
+    addTearDown(restored.dispose);
+    await restored.load();
+    expect(restored.imageDestination, ImageDestination.cloud);
+    expect(restored.cloudDestination, 'https://example.test/upload');
+  });
+
   testWidgets('page preview opens full screen and refreshes after filtering', (
     WidgetTester tester,
   ) async {

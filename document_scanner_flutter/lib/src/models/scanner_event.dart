@@ -18,6 +18,8 @@ enum ScannerEventType {
   cameraState,
   documentDetected,
   documentLost,
+  documentBlurred,
+  documentBlurCleared,
   stabilityChanged,
   autoCaptureProgress,
   captureStarted,
@@ -42,6 +44,7 @@ final class ScannerEvent {
     this.errorCode,
     this.errorMessage,
     this.automatic = false,
+    this.documentBlurred = false,
   });
 
   final ScannerEventType type;
@@ -56,6 +59,8 @@ final class ScannerEvent {
   final String? errorCode;
   final String? errorMessage;
   final bool automatic;
+  /// True only while a detected quadrilateral is rejected by the FFT blur gate.
+  final bool documentBlurred;
 
   factory ScannerEvent.fromMap(Object? value) {
     if (value is! Map) {
@@ -96,6 +101,7 @@ final class ScannerEvent {
       errorCode: value['code'] as String?,
       errorMessage: value['message'] as String?,
       automatic: value['automatic'] == true,
+      documentBlurred: value['documentBlurred'] == true,
     );
   }
 

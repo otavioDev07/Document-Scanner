@@ -34,6 +34,15 @@ abstract class DocumentScannerFlutterPlatform extends PlatformInterface {
     String imagePath,
     ScannerOptions options,
   );
+
+  /// Lets camera implementations validate the stable low-resolution candidate
+  /// against the captured photo before falling back to a full image search.
+  Future<DetectionResult> detectDocumentWithPreviewHint(
+    String imagePath,
+    ScannerOptions options, {
+    List<ScannerPoint>? previewCorners,
+  }) =>
+      detectDocument(imagePath, options);
   Future<CropResult> cropDocument(
     String imagePath,
     List<ScannerPoint> corners,
@@ -49,6 +58,9 @@ abstract class DocumentScannerFlutterPlatform extends PlatformInterface {
     String imagePath, {
     List<String> languages = const <String>[],
   });
+  Future<String> enqueueImageUpload(String imagePath, String destination) =>
+      throw UnimplementedError(
+          'Cloud upload is not available on this platform');
   Stream<ScannerEvent> get events;
   Future<CameraPreviewInfo> startPreview(ScannerOptions options);
   Future<void> stopPreview();

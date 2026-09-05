@@ -56,6 +56,7 @@ void main() {
             'languages': <String>['en'],
             'durationMilliseconds': 21,
           },
+        'enqueueImageUpload' => 'work-123',
         _ => null,
       },
     );
@@ -76,6 +77,13 @@ void main() {
     expect(ocr.text, 'Total 42.00');
     expect(ocr.blocks.single.left, .1);
     expect(ocr.languages, <String>['en']);
+    expect(
+      await platform.enqueueImageUpload(
+        '/tmp/filtered.jpg',
+        'https://example.test/upload',
+      ),
+      'work-123',
+    );
   });
 
   test('turns malformed native payloads into typed exceptions', () async {

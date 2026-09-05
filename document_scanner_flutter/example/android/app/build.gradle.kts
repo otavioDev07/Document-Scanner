@@ -22,6 +22,19 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Accuracy builds target physical modern devices. Adding x86_64 for an
+        // emulator increases a universal APK by roughly 112 MB.
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    packaging {
+        jniLibs.excludes += setOf(
+            "lib/armeabi-v7a/**",
+            "lib/x86/**",
+            "lib/x86_64/**",
+        )
     }
 
 }

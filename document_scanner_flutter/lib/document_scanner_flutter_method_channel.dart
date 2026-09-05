@@ -74,6 +74,25 @@ class MethodChannelDocumentScannerFlutter
       );
 
   @override
+  Future<DetectionResult> detectDocumentWithPreviewHint(
+    String imagePath,
+    ScannerOptions options, {
+    List<ScannerPoint>? previewCorners,
+  }) =>
+      _invoke(
+        'detectDocument',
+        arguments: <String, Object>{
+          'imagePath': imagePath,
+          'options': options.toMap(),
+          if (previewCorners != null)
+            'previewCorners': previewCorners
+                .map((ScannerPoint point) => point.toMap())
+                .toList(growable: false),
+        },
+        parser: DetectionResult.fromMap,
+      );
+
+  @override
   Future<CropResult> cropDocument(
     String imagePath,
     List<ScannerPoint> corners,
@@ -123,6 +142,22 @@ class MethodChannelDocumentScannerFlutter
           'languages': languages,
         },
         parser: OcrResult.fromMap,
+      );
+
+  @override
+  Future<String> enqueueImageUpload(String imagePath, String destination) =>
+      _invoke(
+        'enqueueImageUpload',
+        arguments: <String, Object>{
+          'imagePath': imagePath,
+          'destination': destination,
+        },
+        parser: (Object? value) {
+          if (value is! String || value.isEmpty) {
+            throw const FormatException('Upload work ID is invalid');
+          }
+          return value;
+        },
       );
 
   @override

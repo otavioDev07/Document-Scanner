@@ -36,6 +36,7 @@ final class DocumentScannerController extends ChangeNotifier {
   CaptureResult? _lastCapture;
   ScannerDiagnostics? _diagnostics;
   ScannerException? _lastError;
+  bool _documentBlurred = false;
   double _stability = 0;
   int _stableFrames = 0;
   Future<NativeStatus>? _initialization;
@@ -49,6 +50,7 @@ final class DocumentScannerController extends ChangeNotifier {
   CaptureResult? get lastCapture => _lastCapture;
   ScannerDiagnostics? get diagnostics => _diagnostics;
   ScannerException? get lastError => _lastError;
+  bool get documentBlurred => _documentBlurred;
   double get stability => _stability;
   int get stableFrames => _stableFrames;
   Stream<ScannerEvent> get events => _eventController.stream;
@@ -86,11 +88,15 @@ final class DocumentScannerController extends ChangeNotifier {
 
   Future<CaptureResult?> pickImage() => _runReady(_platform.pickImage);
 
-  Future<DetectionResult> detectDocument(String imagePath) =>
+  Future<DetectionResult> detectDocument(
+    String imagePath, {
+    List<ScannerPoint>? previewCorners,
+  }) =>
       _runReady(() async {
-        final DetectionResult result = await _platform.detectDocument(
+        final DetectionResult result = await _platform.detectDocumentWithPreviewHint(
           imagePath,
           options,
+          previewCorners: previewCorners,
         );
         _lastDetection = result;
         return result;
@@ -147,6 +153,10 @@ final class DocumentScannerController extends ChangeNotifier {
       _runReady(
         () => _platform.recognizeText(imagePath, languages: languages),
       );
+
+  /// Copies [imagePath] into a durable queue and schedules an HTTP multipart upload.
+  Future<String> enqueueImageUpload(String imagePath, String destination) =>
+      _runReady(() => _platform.enqueueImageUpload(imagePath, destination));
 
   Future<CameraPreviewInfo> startPreview() async {
     _ensureNotDisposed();
@@ -224,9 +234,10 @@ final class DocumentScannerController extends ChangeNotifier {
 
   Future<CaptureResult> capture() async {
     _ensureNotDisposed();
-    
+
     // Permite disparar se a câmera estiver em preview ou registrando falha momentânea no detector
-    if (_state != ScannerCameraState.previewing && _state != ScannerCameraState.error) {
+    if (_state != ScannerCameraState.previewing &&
+        _state != ScannerCameraState.error) {
       throw ScannerException(
         'INVALID_STATE',
         'Não foi possível capturar a imagem porque a câmera está no estado: ${_translateState(_state)}.',
@@ -293,10 +304,8 @@ final class DocumentScannerController extends ChangeNotifier {
         if (isDisposed) return;
         _lastError = error is ScannerException
             ? error
-            : ScannerException(
-                'NATIVE_EVENT_ERROR', 
-                'Ocorreu uma falha na comunicação nativa: $error'
-              );
+            : ScannerException('NATIVE_EVENT_ERROR',
+                'Ocorreu uma falha na comunicação nativa: $error');
         _detectionState = ScannerDetectionState.error;
         // Não rebaixamos o estado da câmera para "error" para evitar o bloqueio da UI
       },
@@ -329,14 +338,19 @@ final class DocumentScannerController extends ChangeNotifier {
         _lastError = ScannerException(
           event.errorCode ?? 'NATIVE_EVENT_ERROR',
           _translateErrorMessage(
-            event.errorCode, 
-            event.errorMessage ?? 'Ocorreu uma falha no evento do digitalizador.',
+            event.errorCode,
+            event.errorMessage ??
+                'Ocorreu uma falha no evento do digitalizador.',
           ),
         );
         // Atualiza a detecção para erro, mas preserva a câmera ativa para permitir foto manual
         _detectionState = ScannerDetectionState.error;
-      case ScannerEventType.cameraState:
+      case ScannerEventType.documentBlurred:
+        _documentBlurred = true;
+      case ScannerEventType.documentBlurCleared:
       case ScannerEventType.documentDetected:
+        _documentBlurred = false;
+      case ScannerEventType.cameraState:
       case ScannerEventType.documentLost:
       case ScannerEventType.stabilityChanged:
       case ScannerEventType.autoCaptureProgress:
@@ -349,7 +363,8 @@ final class DocumentScannerController extends ChangeNotifier {
 
   void _ensurePreviewing(String operation) {
     _ensureNotDisposed();
-    if (_state != ScannerCameraState.previewing && _state != ScannerCameraState.error) {
+    if (_state != ScannerCameraState.previewing &&
+        _state != ScannerCameraState.error) {
       throw ScannerException(
         'INVALID_STATE',
         'Não é possível $operation enquanto a câmera estiver no estado: ${_translateState(_state)}.',

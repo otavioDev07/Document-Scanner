@@ -52,7 +52,7 @@ class DocumentScannerFlutterPlugin :
     private val pendingOperations = ConcurrentHashMap.newKeySet<MethodChannel.Result>()
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
-    private val processor by lazy { NativeDocumentProcessor() }
+    private val processor by lazy { NativeDocumentProcessor(applicationContext) }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         applicationContext = binding.applicationContext
@@ -69,7 +69,11 @@ class DocumentScannerFlutterPlugin :
             "pickImage" -> pickImage(result)
             "detectDocument" -> runAsync(result) {
                 val path = requiredPath(call)
-                processor.detect(path, call.argument<Map<String, Any?>>("options"))
+                processor.detect(
+                    sourcePath = path,
+                    options = call.argument<Map<String, Any?>>("options"),
+                    previewCorners = call.argument<List<Map<String, Number>>>("previewCorners"),
+                )
             }
             "cropDocument" -> runAsync(result) {
                 val path = requiredPath(call)
@@ -100,6 +104,12 @@ class DocumentScannerFlutterPlugin :
             }
             "recognizeText" -> runAsync(result) {
                 recognizeText(requiredPath(call))
+            }
+            "enqueueImageUpload" -> runAsync(result) {
+                val destination = call.argument<String>("destination")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: throw IllegalArgumentException("destination is required")
+                CloudUploadQueue.enqueue(applicationContext, requiredPath(call), destination)
             }
             "startPreview" -> startPreview(call, result)
             "stopPreview" -> cameraCommand(result) {

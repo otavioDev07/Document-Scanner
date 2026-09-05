@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum ImageDestination { internal, cloud }
+
 abstract interface class ScannerSettingsStore {
   Future<bool?> getBool(String key);
   Future<int?> getInt(String key);
@@ -72,6 +74,8 @@ final class ScannerSettingsController extends ChangeNotifier {
   static const String _diagnosticsKey = 'scanner.diagnostics';
   static const String _jpegQualityKey = 'scanner.jpegQuality';
   static const String _localeKey = 'appearance.locale';
+  static const String _imageDestinationKey = 'scanner.imageDestination';
+  static const String _cloudDestinationKey = 'scanner.cloudDestination';
 
   final ScannerSettingsStore _store;
 
@@ -79,11 +83,15 @@ final class ScannerSettingsController extends ChangeNotifier {
   bool _diagnosticsEnabled = false;
   int _jpegQuality = 92;
   String? _localeId;
+  ImageDestination _imageDestination = ImageDestination.internal;
+  String _cloudDestination = '';
 
   bool get autoCapture => _autoCapture;
   bool get diagnosticsEnabled => _diagnosticsEnabled;
   int get jpegQuality => _jpegQuality;
   String? get localeId => _localeId;
+  ImageDestination get imageDestination => _imageDestination;
+  String get cloudDestination => _cloudDestination;
 
   Future<void> load() async {
     _autoCapture = await _store.getBool(_autoCaptureKey) ?? true;
@@ -91,6 +99,12 @@ final class ScannerSettingsController extends ChangeNotifier {
     _jpegQuality = (await _store.getInt(_jpegQualityKey) ?? 92).clamp(60, 100);
     final String storedLocale = await _store.getString(_localeKey) ?? '';
     _localeId = storedLocale.isEmpty ? null : storedLocale;
+    final String destination =
+        await _store.getString(_imageDestinationKey) ?? 'internal';
+    _imageDestination = destination == 'cloud'
+        ? ImageDestination.cloud
+        : ImageDestination.internal;
+    _cloudDestination = await _store.getString(_cloudDestinationKey) ?? '';
     notifyListeners();
   }
 
@@ -121,5 +135,20 @@ final class ScannerSettingsController extends ChangeNotifier {
     _localeId = value;
     notifyListeners();
     await _store.setString(_localeKey, value ?? '');
+  }
+
+  Future<void> setImageDestination(ImageDestination value) async {
+    if (_imageDestination == value) return;
+    _imageDestination = value;
+    notifyListeners();
+    await _store.setString(_imageDestinationKey, value.name);
+  }
+
+  Future<void> setCloudDestination(String value) async {
+    final String normalized = value.trim();
+    if (_cloudDestination == normalized) return;
+    _cloudDestination = normalized;
+    notifyListeners();
+    await _store.setString(_cloudDestinationKey, normalized);
   }
 }
