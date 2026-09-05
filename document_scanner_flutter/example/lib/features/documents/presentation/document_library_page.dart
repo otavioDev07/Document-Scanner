@@ -43,7 +43,7 @@ class _DocumentLibraryPageState extends State<DocumentLibraryPage> {
     final CropResult? crop = await Navigator.of(context).push<CropResult>(
       MaterialPageRoute<CropResult>(
         builder: (BuildContext context) =>
-            ScannerPage(settings: widget.settings),
+            AutomaticScannerPage(settings: widget.settings),
       ),
     );
     if (crop == null || !mounted) return;

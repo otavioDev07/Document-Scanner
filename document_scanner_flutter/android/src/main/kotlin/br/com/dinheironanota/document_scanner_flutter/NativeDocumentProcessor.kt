@@ -28,23 +28,21 @@ internal class NativeDocumentProcessor(context: Context) {
                 .roundToInt().coerceAtLeast(0)
             val areaScaleMinFactor = options.number("areaScaleMinFactor", 0.04)
                 .coerceIn(0.0, 1.0)
-            val encodedBitmap = cascade.encodeBitmap(bitmap)
             val hint = previewCorners?.toPixelCoordinates(bitmap.width, bitmap.height)
-            // A stable preview candidate is cheap to validate at capture size:
-            // warp/FFT first. Only a rejected hint pays for a full C++ search.
-            val hintedDetection = hint?.let { points ->
-                cascade.processEncodedBitmap(
-                    encodedBitmap = encodedBitmap,
-                    rdpCorners = points,
-                    rdpScore = geometryScore(points, bitmap.width, bitmap.height),
+            val detection = if (hint != null) {
+                // Performance-test path: trust the reduced-preview geometry,
+                // scale it to the EXIF-oriented photo, warp once and run FFT
+                // on that crop only. There is intentionally no full-res search.
+                validatePreviewCrop(
+                    source = bitmap,
+                    previewPoints = hint,
+                    maxOutputDimension = options.number("maxOutputDimension", 4096.0)
+                        .roundToInt().coerceAtLeast(1),
                 )
-            }
-            val detection = if (hintedDetection?.corners != null) {
-                hintedDetection
             } else {
                 val raw = nativeDetect(bitmap, resizeThreshold, areaScaleMinFactor)
                 cascade.processEncodedBitmap(
-                    encodedBitmap = encodedBitmap,
+                    encodedBitmap = cascade.encodeBitmap(bitmap),
                     rdpCorners = raw,
                     rdpScore = geometryScore(raw, bitmap.width, bitmap.height),
                 )
@@ -94,22 +92,10 @@ internal class NativeDocumentProcessor(context: Context) {
 
         val source = OrientedBitmapDecoder.decode(sourcePath)
         try {
-            val tl = PixelPoint(values[0] * source.width, values[1] * source.height)
-            val tr = PixelPoint(values[2] * source.width, values[3] * source.height)
-            val br = PixelPoint(values[4] * source.width, values[5] * source.height)
-            val bl = PixelPoint(values[6] * source.width, values[7] * source.height)
-            var outputWidth = max(distance(tl, tr), distance(bl, br)).roundToInt().coerceAtLeast(1)
-            var outputHeight = max(distance(tl, bl), distance(tr, br)).roundToInt().coerceAtLeast(1)
-
             val maxDimension = options.number("maxOutputDimension", 4096.0).roundToInt().coerceAtLeast(1)
-            val largest = max(outputWidth, outputHeight)
-            if (largest > maxDimension) {
-                val scale = maxDimension.toDouble() / largest
-                outputWidth = (outputWidth * scale).roundToInt().coerceAtLeast(1)
-                outputHeight = (outputHeight * scale).roundToInt().coerceAtLeast(1)
-            }
+            val outputSize = cropSize(values, source.width, source.height, maxDimension)
 
-            val output = Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
+            val output = Bitmap.createBitmap(outputSize.width, outputSize.height, Bitmap.Config.ARGB_8888)
             try {
                 nativeCrop(source, values, output)
                 val directory = File(outputDirectory, "document_scanner_flutter/output")
@@ -123,8 +109,8 @@ internal class NativeDocumentProcessor(context: Context) {
                 }
                 return mapOf(
                     "path" to outputFile.absolutePath,
-                    "width" to outputWidth,
-                    "height" to outputHeight,
+                    "width" to outputSize.width,
+                    "height" to outputSize.height,
                 )
             } finally {
                 output.recycle()
@@ -274,6 +260,60 @@ internal class NativeDocumentProcessor(context: Context) {
 
     private fun distance(first: PixelPoint, second: PixelPoint): Double =
         hypot(first.x - second.x, first.y - second.y)
+
+    private data class CropSize(val width: Int, val height: Int)
+
+    private fun cropSize(
+        normalizedPoints: DoubleArray,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        maxOutputDimension: Int,
+    ): CropSize {
+        val tl = PixelPoint(normalizedPoints[0] * sourceWidth, normalizedPoints[1] * sourceHeight)
+        val tr = PixelPoint(normalizedPoints[2] * sourceWidth, normalizedPoints[3] * sourceHeight)
+        val br = PixelPoint(normalizedPoints[4] * sourceWidth, normalizedPoints[5] * sourceHeight)
+        val bl = PixelPoint(normalizedPoints[6] * sourceWidth, normalizedPoints[7] * sourceHeight)
+        var width = max(distance(tl, tr), distance(bl, br)).roundToInt().coerceAtLeast(1)
+        var height = max(distance(tl, bl), distance(tr, br)).roundToInt().coerceAtLeast(1)
+        val largest = max(width, height)
+        if (largest > maxOutputDimension) {
+            val scale = maxOutputDimension.toDouble() / largest
+            width = (width * scale).roundToInt().coerceAtLeast(1)
+            height = (height * scale).roundToInt().coerceAtLeast(1)
+        }
+        return CropSize(width, height)
+    }
+
+    private fun validatePreviewCrop(
+        source: Bitmap,
+        previewPoints: DoubleArray,
+        maxOutputDimension: Int,
+    ): CascadeDetection {
+        val normalizedPoints = previewPoints.toNormalizedCoordinates(source.width, source.height)
+        val outputSize = cropSize(normalizedPoints, source.width, source.height, maxOutputDimension)
+        val warped = Bitmap.createBitmap(outputSize.width, outputSize.height, Bitmap.Config.ARGB_8888)
+        return try {
+            nativeCrop(source, normalizedPoints, warped)
+            val fft = cascade.evaluateCrop(warped)
+            if (fft.valid) {
+                CascadeDetection(
+                    corners = previewPoints,
+                    confidence = fft.score,
+                    source = "preview_scaled",
+                    fftScore = fft.score,
+                )
+            } else {
+                CascadeDetection(
+                    corners = null,
+                    confidence = fft.score,
+                    source = "fft_rejected",
+                    fftScore = fft.score,
+                )
+            }
+        } finally {
+            warped.recycle()
+        }
+    }
 
     private fun DoubleArray.toPixelCoordinates(width: Int, height: Int): DoubleArray {
         require(size == 8) { "A document quadrilateral must contain four points" }

@@ -7,19 +7,30 @@ import 'package:flutter/material.dart';
 import '../../../core/localization/legacy_localizations.dart';
 import '../../settings/application/scanner_settings_controller.dart';
 
-class ScannerPage extends StatefulWidget {
-  const ScannerPage({super.key, required this.settings});
+/// Dedicated route for the automatic receipt-capture experience.
+class AutomaticScannerPage extends StatefulWidget {
+  const AutomaticScannerPage({super.key, required this.settings});
 
   final ScannerSettingsController settings;
 
   @override
-  State<ScannerPage> createState() => _ScannerPageState();
+  State<AutomaticScannerPage> createState() => _ScannerPageState();
 }
 
-class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
+/// Kept for callers that still need the previous route name. New scan flows
+/// use [AutomaticScannerPage] directly.
+@Deprecated('Use AutomaticScannerPage for receipt capture.')
+class ScannerPage extends AutomaticScannerPage {
+  const ScannerPage({super.key, required super.settings});
+}
+
+class _ScannerPageState extends State<AutomaticScannerPage>
+    with WidgetsBindingObserver {
   late final DocumentScannerController _controller = DocumentScannerController(
     options: ScannerOptions(
-      autoCapture: widget.settings.autoCapture,
+      // This screen is intentionally dedicated to the automatic flow. The
+      // manual/import controls remain implemented, but are disabled in the UI.
+      autoCapture: true,
       diagnosticsEnabled: widget.settings.diagnosticsEnabled,
       autoCaptureDistanceThreshold: 150,
       jpegQuality: widget.settings.jpegQuality,
@@ -35,7 +46,11 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
   bool _busy = false;
   bool _cameraActive = false;
   bool _handlingCapture = false;
-  late bool _autoCapture = widget.settings.autoCapture;
+  String? _cameraNotice;
+  bool _autoCapture = true;
+  // Keep the manual flows in place so they can be restored without rebuilding
+  // them, but leave this automatic-capture experience intentionally locked.
+  final bool _manualControlsEnabled = false;
   ScannerFlashMode _flashMode = ScannerFlashMode.off;
 
   @override
@@ -43,11 +58,16 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _events = _controller.events.listen((ScannerEvent event) {
+      if (event.type == ScannerEventType.documentDetected &&
+          _cameraNotice != null &&
+          mounted) {
+        setState(() => _cameraNotice = null);
+      }
       if (event.type == ScannerEventType.captureCompleted &&
           event.automatic &&
           event.capture != null) {
         final List<ScannerPoint>? previewCorners =
-            _controller.lastDetection?.corners;
+            event.capture!.previewCorners ?? _controller.lastDetection?.corners;
         unawaited(
           _useCameraCapture(
             event.capture!,
@@ -66,7 +86,9 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
   Future<void> _initialize() async {
     try {
       final NativeStatus status = await _controller.initialize();
-      if (mounted) setState(() => _status = status);
+      if (!mounted) return;
+      setState(() => _status = status);
+      await _startCamera();
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     }
@@ -76,6 +98,7 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
     setState(() {
       _busy = true;
       _error = null;
+      _cameraNotice = null;
       _crop = null;
       _selected = null;
       _detection = null;
@@ -83,6 +106,7 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
     });
     try {
       await _controller.startPreview();
+      await _controller.setAutoCapture(true);
       if (mounted) setState(() => _cameraActive = true);
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
@@ -99,10 +123,11 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
     try {
       final List<ScannerPoint>? previewCorners =
           _controller.lastDetection?.corners;
+      final CaptureResult capture = await _controller.capture();
       await _useCameraCapture(
-        await _controller.capture(),
+        capture,
         automatic: false,
-        previewCorners: previewCorners,
+        previewCorners: capture.previewCorners ?? previewCorners,
       );
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
@@ -169,7 +194,8 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           _cameraActive = true;
-          _error = message;
+          _error = null;
+          _cameraNotice = message;
         });
       }
     } catch (error) {
@@ -341,7 +367,10 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
                       'autoscan',
                       fallback: 'Ativar captura automática',
                     ),
-              onPressed: _busy ? null : _toggleAutoCapture,
+              // Automatic capture is the only supported capture mode here.
+              onPressed: _manualControlsEnabled && !_busy
+                  ? _toggleAutoCapture
+                  : null,
               icon: Icon(
                 _autoCapture ? Icons.auto_awesome : Icons.auto_awesome_outlined,
               ),
@@ -388,12 +417,17 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
                   child: ColoredBox(
                     color: Colors.black,
                     child: _cameraActive
-                        ? DocumentScannerPreview(controller: _controller)
+                        ? DocumentScannerPreview(
+                            controller: _controller,
+                            notice: _cameraNotice,
+                          )
                         : _handlingCapture
                         ? const _ProcessingCoupon()
-                        : _crop != null
+                        : _manualControlsEnabled && _crop != null
                         ? Image.file(File(_crop!.path), fit: BoxFit.contain)
-                        : _editedCorners != null && _selected != null
+                        : _manualControlsEnabled &&
+                              _editedCorners != null &&
+                              _selected != null
                         ? CropEditor(
                             imagePath: _selected!.path,
                             imageSize: Size(
@@ -404,19 +438,9 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
                             onCornersChanged: (List<ScannerPoint> value) =>
                                 _editedCorners = value,
                           )
-                        : Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(32),
-                              child: Text(
-                                context.l10n.text(
-                                  'no_document_yet',
-                                  fallback:
-                                      'Abra a câmera ou escolha uma imagem para localizar as bordas do documento.',
-                                ),
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.white70),
-                              ),
-                            ),
+                        : _OpeningAutomaticCamera(
+                            failed: _error != null,
+                            onRetry: _busy ? null : _startCamera,
                           ),
                   ),
                 ),
@@ -433,6 +457,9 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
   }
 
   Widget _bottomControls() {
+    if (!_cameraActive && !_manualControlsEnabled) {
+      return const SizedBox.shrink();
+    }
     if (_cameraActive) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -443,8 +470,10 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
             icon: const Icon(Icons.flash_on),
           ),
           IconButton.filled(
-            tooltip: context.l10n.text('scan', fallback: 'Capturar'),
-            onPressed: _busy ? null : _captureCamera,
+            tooltip: 'Captura manual desativada',
+            onPressed: _manualControlsEnabled && !_busy
+                ? _captureCamera
+                : null,
             iconSize: 36,
             padding: const EdgeInsets.all(18),
             icon: const Icon(Icons.camera_alt),
@@ -515,17 +544,20 @@ class _ScannerPageState extends State<ScannerPage> with WidgetsBindingObserver {
         ),
         const SizedBox(width: 8),
         IconButton.filledTonal(
-          tooltip: context.l10n.text(
-            'import_documents',
-            fallback: 'Escolher imagem',
-          ),
-          onPressed: _busy ? null : _chooseAndDetect,
+          tooltip: 'Galeria desativada',
+          onPressed: _manualControlsEnabled && !_busy
+              ? _chooseAndDetect
+              : null,
           icon: const Icon(Icons.photo_library_outlined),
         ),
         const SizedBox(width: 8),
         IconButton.filledTonal(
-          tooltip: 'Recortar',
-          onPressed: _busy || _editedCorners == null ? null : _cropDocument,
+          tooltip: 'Recorte manual desativado',
+          onPressed: _manualControlsEnabled &&
+                  !_busy &&
+                  _editedCorners != null
+              ? _cropDocument
+              : null,
           icon: const Icon(Icons.crop),
         ),
       ],
@@ -562,6 +594,43 @@ class _ProcessingCoupon extends StatelessWidget {
               'Processando cupom…',
               style: TextStyle(color: Colors.white, fontSize: 16),
             ),
+          ],
+        ),
+      );
+}
+
+class _OpeningAutomaticCamera extends StatelessWidget {
+  const _OpeningAutomaticCamera({required this.failed, required this.onRetry});
+
+  final bool failed;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (!failed)
+              const SizedBox.square(
+                dimension: 28,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+            const SizedBox(height: 16),
+            Text(
+              failed
+                  ? 'Não foi possível abrir a câmera automática.'
+                  : 'Abrindo câmera automática…',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 16),
+            ),
+            if (failed) ...<Widget>[
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Tentar novamente'),
+              ),
+            ],
           ],
         ),
       );

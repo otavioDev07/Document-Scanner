@@ -65,6 +65,7 @@ internal class CameraSession(
     private var stabilityTracker = StabilityTracker(null)
     private var pendingStart: ((Result<Map<String, Any>>) -> Unit)? = null
     private var lastHadDocument = false
+    private var latestDisplayedCorners: DoubleArray? = null
     private var blurWarningVisible = false
     private var previewAnnouncementPending = false
 
@@ -186,6 +187,7 @@ internal class CameraSession(
             }
             val currentCapture = imageCapture
                 ?: throw CameraOperationException("INVALID_STATE", "Image capture is not ready")
+            val previewCornersAtCapture = latestDisplayedCorners?.copyOf()
             stabilityTracker.onCaptured(System.nanoTime())
             emit(
                 event(
@@ -205,11 +207,22 @@ internal class CameraSession(
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                         capturing.set(false)
-                        val result = mapOf<String, Any>(
-                            "path" to outputFile.absolutePath,
-                            "mimeType" to "image/jpeg",
-                            "displayName" to outputFile.name,
-                        )
+                        val result = buildMap<String, Any> {
+                            put("path", outputFile.absolutePath)
+                            put("mimeType", "image/jpeg")
+                            put("displayName", outputFile.name)
+                            previewCornersAtCapture?.let { corners ->
+                                put(
+                                    "previewCorners",
+                                    List(4) { index ->
+                                        mapOf(
+                                            "x" to corners[index * 2],
+                                            "y" to corners[index * 2 + 1],
+                                        )
+                                    },
+                                )
+                            }
+                        }
                         emit(
                             event(
                                 eventName = "captureCompleted",
@@ -252,6 +265,7 @@ internal class CameraSession(
         unbindOwnedUseCases()
         stabilityTracker.reset()
         lastHadDocument = false
+        latestDisplayedCorners = null
         releaseTexture()
         emitCameraState("ready")
     }
@@ -395,6 +409,7 @@ internal class CameraSession(
 
             val displayedCorners = stability.corners
             if (displayedCorners == null) {
+                latestDisplayedCorners = null
                 val rejectedForBlur = detection.source == "fft_rejected"
                 // FFT is evaluated on a provisional warp for every frame. A
                 // first-frame rejection may be a false quadrilateral, so only
@@ -454,6 +469,7 @@ internal class CameraSession(
 
             lastHadDocument = true
             blurWarningVisible = false
+            latestDisplayedCorners = displayedCorners.copyOf()
             val cornerMaps = List(4) { index ->
                 mapOf(
                     "x" to displayedCorners[index * 2],

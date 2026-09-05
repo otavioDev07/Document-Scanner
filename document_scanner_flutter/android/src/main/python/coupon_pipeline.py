@@ -17,6 +17,9 @@ FALLBACK_LOCK = 0.22
 CONSENSUS_IOU = 0.80
 FFT_CUTOFF = 0.222
 WATERSHED_MAX_AREA = 0.90
+PREVIEW_DARK_P95 = 45
+PREVIEW_DARK_MEAN = 30
+PREVIEW_LOW_CONTRAST = 25
 
 
 def _rejected(engine="none", **extra):
@@ -287,6 +290,17 @@ def _fft_score(warped, mask_percentage=0.6):
     return float(np.mean((magnitude - minimum) / (maximum - minimum)))
 
 
+def _preview_is_too_dark(image):
+    """Reject a covered/underexposed camera before line detectors see noise."""
+    gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    mean = float(np.mean(gray))
+    p05, p95 = np.percentile(gray, (5, 95))
+    contrast = float(p95 - p05)
+    return p95 < PREVIEW_DARK_P95 or (
+        mean < PREVIEW_DARK_MEAN and contrast < PREVIEW_LOW_CONTRAST
+    )
+
+
 def _run(image, rdp_points, rdp_score):
     rdp = _candidate(bool(rdp_points), rdp_score, rdp_points, "cpp_rdp_hough")
     if rdp["found"] and rdp["score"] >= RDP_EARLY_EXIT:
@@ -325,6 +339,8 @@ def process_frame(nv21, width, height, rotation_degrees, rdp_points, rdp_score):
             image = cv2.rotate(image, cv2.ROTATE_180)
         elif rotation == 270:
             image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        if _preview_is_too_dark(image):
+            return json.dumps(_rejected("underexposed_preview"), separators=(",", ":"))
         points = [] if rdp_points is None else np.asarray(rdp_points, dtype=np.float64).reshape(-1, 2).tolist()
         return json.dumps(_run(image, points, float(rdp_score)), separators=(",", ":"))
     except Exception as error:
@@ -343,3 +359,24 @@ def process_encoded_image(encoded_image, rdp_points, rdp_score):
         return json.dumps(_run(image, points, float(rdp_score)), separators=(",", ":"))
     except Exception as error:
         return json.dumps(_rejected("pipeline_error", error=str(error)), separators=(",", ":"))
+
+
+def evaluate_encoded_crop(encoded_crop):
+    """FFT-only endpoint for the preview-scaled capture path."""
+    try:
+        crop = cv2.imdecode(
+            np.frombuffer(encoded_crop, dtype=np.uint8),
+            cv2.IMREAD_COLOR,
+        )
+        if crop is None:
+            raise ValueError("encoded crop could not be decoded")
+        score = _fft_score(crop)
+        return json.dumps(
+            {"valid": score > FFT_CUTOFF, "fftScore": score},
+            separators=(",", ":"),
+        )
+    except Exception as error:
+        return json.dumps(
+            {"valid": False, "fftScore": 0.0, "error": str(error)},
+            separators=(",", ":"),
+        )

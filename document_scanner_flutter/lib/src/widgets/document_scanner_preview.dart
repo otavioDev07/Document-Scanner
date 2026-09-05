@@ -16,6 +16,7 @@ class DocumentScannerPreview extends StatelessWidget {
     this.detection,
     this.fit = BoxFit.cover,
     this.showOverlay = false,
+    this.notice,
   });
 
   final DocumentScannerController controller;
@@ -29,6 +30,10 @@ class DocumentScannerPreview extends StatelessWidget {
   /// Live contours are optional because preview candidates are intentionally
   /// lightweight and may differ from the high-resolution capture result.
   final bool showOverlay;
+
+  /// A one-line camera notice supplied by the host, for example after an
+  /// automatic capture is rejected and preview resumes.
+  final String? notice;
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -75,8 +80,10 @@ class DocumentScannerPreview extends StatelessWidget {
                 left: 24,
                 right: 24,
                 child: _ScannerStatusBanner(
-                  message: _statusMessage(controller),
-                  color: _statusColor(controller),
+                  message: notice ?? _statusMessage(controller),
+                  color: notice == null
+                      ? _statusColor(controller)
+                      : const Color(0xE5B3261E),
                 ),
               ),
               if (controller.detectionState ==

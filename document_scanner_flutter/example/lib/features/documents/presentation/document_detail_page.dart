@@ -26,7 +26,8 @@ class DocumentDetailPage extends StatelessWidget {
   Future<void> _addPage(BuildContext context) async {
     final CropResult? crop = await Navigator.of(context).push<CropResult>(
       MaterialPageRoute<CropResult>(
-        builder: (BuildContext context) => ScannerPage(settings: settings),
+        builder: (BuildContext context) =>
+            AutomaticScannerPage(settings: settings),
       ),
     );
     if (crop == null) return;

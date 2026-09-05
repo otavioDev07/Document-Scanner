@@ -15,6 +15,11 @@ internal data class CascadeDetection(
     val fftScore: Double?,
 )
 
+internal data class FftValidation(
+    val valid: Boolean,
+    val score: Double,
+)
+
 /** Long-lived Chaquopy bridge. A Python interpreter/module is never recreated per frame. */
 internal class PythonCascadeProcessor(context: Context) {
     private val module = synchronized(PythonCascadeProcessor::class.java) {
@@ -79,6 +84,39 @@ internal class PythonCascadeProcessor(context: Context) {
             module.callAttr("process_encoded_image", encodedBitmap, rdpCorners, rdpScore).toString(),
         )
 
+    /** Evaluates sharpness of an already warped crop without running detectors. */
+    fun evaluateCrop(bitmap: Bitmap): FftValidation {
+        // FFT cost grows with every pixel. This image is a quality probe, not
+        // the delivered crop, so cap only the probe while preserving the full
+        // resolution bitmap for the final native crop.
+        val largest = maxOf(bitmap.width, bitmap.height)
+        val fftBitmap = if (largest <= FFT_MAX_DIMENSION) {
+            bitmap
+        } else {
+            val scale = FFT_MAX_DIMENSION.toDouble() / largest
+            Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * scale).toInt().coerceAtLeast(1),
+                (bitmap.height * scale).toInt().coerceAtLeast(1),
+                true,
+            )
+        }
+        val value = try {
+            JSONObject(
+                module.callAttr("evaluate_encoded_crop", encodeBitmap(fftBitmap)).toString(),
+            )
+        } finally {
+            if (fftBitmap !== bitmap) fftBitmap.recycle()
+        }
+        value.optString("error").takeIf { it.isNotBlank() }?.let { error ->
+            throw CameraOperationException("PYTHON_PIPELINE_FAILED", error)
+        }
+        return FftValidation(
+            valid = value.optBoolean("valid", false),
+            score = value.optDouble("fftScore", 0.0),
+        )
+    }
+
     private fun parse(raw: String): CascadeDetection {
         val value = JSONObject(raw)
         val pipelineError = value.optString("error").takeIf { it.isNotBlank() }
@@ -135,5 +173,9 @@ internal class PythonCascadeProcessor(context: Context) {
             }
         }
         return output
+    }
+
+    private companion object {
+        const val FFT_MAX_DIMENSION = 1280
     }
 }
