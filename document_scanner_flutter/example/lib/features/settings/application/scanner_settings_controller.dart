@@ -76,6 +76,7 @@ final class ScannerSettingsController extends ChangeNotifier {
   static const String _localeKey = 'appearance.locale';
   static const String _imageDestinationKey = 'scanner.imageDestination';
   static const String _cloudDestinationKey = 'scanner.cloudDestination';
+  static const String _cloudSecurityKeyStorageKey = 'scanner.cloudSecurityKey';
 
   final ScannerSettingsStore _store;
 
@@ -85,6 +86,7 @@ final class ScannerSettingsController extends ChangeNotifier {
   String? _localeId;
   ImageDestination _imageDestination = ImageDestination.internal;
   String _cloudDestination = '';
+  String _cloudSecurityKey = '';
 
   bool get autoCapture => _autoCapture;
   bool get diagnosticsEnabled => _diagnosticsEnabled;
@@ -92,6 +94,7 @@ final class ScannerSettingsController extends ChangeNotifier {
   String? get localeId => _localeId;
   ImageDestination get imageDestination => _imageDestination;
   String get cloudDestination => _cloudDestination;
+  String get cloudSecurityKey => _cloudSecurityKey;
 
   Future<void> load() async {
     _autoCapture = await _store.getBool(_autoCaptureKey) ?? true;
@@ -105,6 +108,8 @@ final class ScannerSettingsController extends ChangeNotifier {
         ? ImageDestination.cloud
         : ImageDestination.internal;
     _cloudDestination = await _store.getString(_cloudDestinationKey) ?? '';
+    _cloudSecurityKey =
+        await _store.getString(_cloudSecurityKeyStorageKey) ?? '';
     notifyListeners();
   }
 
@@ -150,5 +155,13 @@ final class ScannerSettingsController extends ChangeNotifier {
     _cloudDestination = normalized;
     notifyListeners();
     await _store.setString(_cloudDestinationKey, normalized);
+  }
+
+  Future<void> setCloudSecurityKey(String value) async {
+    final String normalized = value.trim();
+    if (_cloudSecurityKey == normalized) return;
+    _cloudSecurityKey = normalized;
+    notifyListeners();
+    await _store.setString(_cloudSecurityKeyStorageKey, normalized);
   }
 }

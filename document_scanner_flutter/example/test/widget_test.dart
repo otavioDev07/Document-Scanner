@@ -101,13 +101,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(settings.imageDestination, ImageDestination.cloud);
-    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byType(TextField), findsNWidgets(2));
     await tester.enterText(
-      find.byType(TextField),
+      find.byType(TextField).first,
       ' https://example.test/upload ',
     );
     await tester.pump();
     expect(settings.cloudDestination, 'https://example.test/upload');
+    await tester.enterText(find.byType(TextField).last, ' minha-chave ');
+    await tester.pump();
+    expect(settings.cloudSecurityKey, 'minha-chave');
 
     final ScannerSettingsController restored = ScannerSettingsController(
       store: store,
@@ -116,6 +119,7 @@ void main() {
     await restored.load();
     expect(restored.imageDestination, ImageDestination.cloud);
     expect(restored.cloudDestination, 'https://example.test/upload');
+    expect(restored.cloudSecurityKey, 'minha-chave');
   });
 
   testWidgets('page preview opens full screen and refreshes after filtering', (

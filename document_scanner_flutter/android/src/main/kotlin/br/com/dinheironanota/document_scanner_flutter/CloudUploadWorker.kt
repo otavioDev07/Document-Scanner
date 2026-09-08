@@ -18,9 +18,10 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 internal object CloudUploadQueue {
-    fun enqueue(context: Context, imagePath: String, destination: String): String {
+    fun enqueue(context: Context, imagePath: String, destination: String, securityKey: String): String {
         val source = File(imagePath)
         require(source.isFile) { "Processed image does not exist: $imagePath" }
+        require(securityKey.isNotBlank()) { "Upload token is required" }
         val endpoint = validateEndpoint(destination)
         val id = UUID.randomUUID().toString()
         val queueDirectory = File(context.filesDir, "document_scanner_flutter/upload_queue")
@@ -37,6 +38,7 @@ internal object CloudUploadQueue {
                 Data.Builder()
                     .putString(CloudUploadWorker.KEY_FILE_PATH, queuedFile.absolutePath)
                     .putString(CloudUploadWorker.KEY_DESTINATION, endpoint)
+                    .putString(CloudUploadWorker.KEY_SECURITY_KEY, securityKey.trim())
                     .build(),
             )
             .addTag(CloudUploadWorker.TAG)
@@ -68,6 +70,8 @@ class CloudUploadWorker(
         val path = inputData.getString(KEY_FILE_PATH) ?: return Result.failure(error("Missing file path"))
         val destination = inputData.getString(KEY_DESTINATION)
             ?: return Result.failure(error("Missing destination"))
+        val securityKey = inputData.getString(KEY_SECURITY_KEY).orEmpty()
+        if (securityKey.isBlank()) return Result.failure(error("Missing upload token"))
         val file = File(path)
         if (!file.isFile) return Result.failure(error("Queued image no longer exists"))
 
@@ -81,11 +85,19 @@ class CloudUploadWorker(
             setChunkedStreamingMode(64 * 1024)
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            // A unique value makes retrying this work safe for the receiver.
             setRequestProperty("Idempotency-Key", id.toString())
         }
 
         return try {
             BufferedOutputStream(connection.outputStream).use { output ->
+                output.write("--$boundary\r\n".toByteArray())
+                output.write(
+                    "Content-Disposition: form-data; name=\"upload_token\"\r\n".toByteArray(),
+                )
+                output.write("Content-Type: text/plain; charset=UTF-8\r\n\r\n".toByteArray())
+                output.write(securityKey.toByteArray())
+                output.write("\r\n".toByteArray())
                 output.write("--$boundary\r\n".toByteArray())
                 output.write(
                     "Content-Disposition: form-data; name=\"file\"; filename=\"${file.name}\"\r\n".toByteArray(),
@@ -124,6 +136,7 @@ class CloudUploadWorker(
         const val TAG = "document-scanner-cloud-upload"
         const val KEY_FILE_PATH = "filePath"
         const val KEY_DESTINATION = "destination"
+        const val KEY_SECURITY_KEY = "securityKey"
         const val KEY_HTTP_STATUS = "httpStatus"
         const val KEY_ERROR = "error"
         private const val MAX_ATTEMPTS = 5

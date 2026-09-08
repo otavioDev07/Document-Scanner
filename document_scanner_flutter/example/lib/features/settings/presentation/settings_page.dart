@@ -16,12 +16,16 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _cloudDestination = TextEditingController(
     text: widget.controller.cloudDestination,
   );
+  late final TextEditingController _cloudSecurityKey = TextEditingController(
+    text: widget.controller.cloudSecurityKey,
+  );
 
   ScannerSettingsController get controller => widget.controller;
 
   @override
   void dispose() {
     _cloudDestination.dispose();
+    _cloudSecurityKey.dispose();
     super.dispose();
   }
 
@@ -135,18 +139,36 @@ class _SettingsPageState extends State<SettingsPage> {
               if (controller.imageDestination == ImageDestination.cloud)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: TextField(
-                    controller: _cloudDestination,
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      labelText: 'Link, pasta do Drive ou Webhook',
-                      hintText: 'https://seu-endpoint.example/upload',
-                      helperText:
-                          'Informe um endpoint HTTP(S) que aceite multipart/form-data.',
-                    ),
-                    onChanged: controller.setCloudDestination,
+                  child: Column(
+                    children: <Widget>[
+                      TextField(
+                        controller: _cloudDestination,
+                        keyboardType: TextInputType.url,
+                        autocorrect: false,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Link, pasta do Drive ou Webhook',
+                          hintText: 'https://seu-endpoint.example/upload',
+                          helperText:
+                              'Informe um endpoint HTTP(S) que aceite multipart/form-data.',
+                        ),
+                        onChanged: controller.setCloudDestination,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _cloudSecurityKey,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Token de Autenticação',
+                          helperText:
+                              'Enviado no campo upload_token do formulário para validação no Make.',
+                        ),
+                        onChanged: controller.setCloudSecurityKey,
+                      ),
+                    ],
                   ),
                 ),
               const Divider(),

@@ -58,7 +58,11 @@ abstract class DocumentScannerFlutterPlatform extends PlatformInterface {
     String imagePath, {
     List<String> languages = const <String>[],
   });
-  Future<String> enqueueImageUpload(String imagePath, String destination) =>
+  Future<String> enqueueImageUpload(
+    String imagePath,
+    String destination, {
+    String securityKey = '',
+  }) =>
       throw UnimplementedError(
           'Cloud upload is not available on this platform');
   Stream<ScannerEvent> get events;

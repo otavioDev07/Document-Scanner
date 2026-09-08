@@ -93,7 +93,8 @@ final class DocumentScannerController extends ChangeNotifier {
     List<ScannerPoint>? previewCorners,
   }) =>
       _runReady(() async {
-        final DetectionResult result = await _platform.detectDocumentWithPreviewHint(
+        final DetectionResult result =
+            await _platform.detectDocumentWithPreviewHint(
           imagePath,
           options,
           previewCorners: previewCorners,
@@ -155,8 +156,18 @@ final class DocumentScannerController extends ChangeNotifier {
       );
 
   /// Copies [imagePath] into a durable queue and schedules an HTTP multipart upload.
-  Future<String> enqueueImageUpload(String imagePath, String destination) =>
-      _runReady(() => _platform.enqueueImageUpload(imagePath, destination));
+  Future<String> enqueueImageUpload(
+    String imagePath,
+    String destination, {
+    String securityKey = '',
+  }) =>
+      _runReady(
+        () => _platform.enqueueImageUpload(
+          imagePath,
+          destination,
+          securityKey: securityKey,
+        ),
+      );
 
   Future<CameraPreviewInfo> startPreview() async {
     _ensureNotDisposed();
@@ -355,6 +366,8 @@ final class DocumentScannerController extends ChangeNotifier {
       case ScannerEventType.stabilityChanged:
       case ScannerEventType.autoCaptureProgress:
       case ScannerEventType.diagnostics:
+      case ScannerEventType.uploadCompleted:
+      case ScannerEventType.uploadFailed:
         break;
     }
     _eventController.add(event);

@@ -14,6 +14,9 @@ import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Observer
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -30,6 +33,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.UUID
 
 /** Flutter bridge for static scanning and the native CameraX scanner. */
 class DocumentScannerFlutterPlugin :
@@ -109,7 +113,19 @@ class DocumentScannerFlutterPlugin :
                 val destination = call.argument<String>("destination")
                     ?.takeIf { it.isNotBlank() }
                     ?: throw IllegalArgumentException("destination is required")
-                CloudUploadQueue.enqueue(applicationContext, requiredPath(call), destination)
+                val securityKey = call.argument<String>("securityKey")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: throw IllegalArgumentException("securityKey is required")
+                val workId = CloudUploadQueue.enqueue(
+                    applicationContext,
+                    requiredPath(call),
+                    destination,
+                    securityKey,
+                )
+                // WorkManager's LiveData must be observed from Android's main thread.
+                // The upload itself remains scheduled from this background operation.
+                mainHandler.post { observeUpload(workId) }
+                workId
             }
             "startPreview" -> startPreview(call, result)
             "stopPreview" -> cameraCommand(result) {
@@ -299,6 +315,40 @@ class DocumentScannerFlutterPlugin :
 
     private fun emitCameraEvent(event: Map<String, Any?>) {
         mainHandler.post { eventSink?.success(event) }
+    }
+
+    private fun observeUpload(workId: String) {
+        val liveData = WorkManager.getInstance(applicationContext)
+            .getWorkInfoByIdLiveData(UUID.fromString(workId))
+        lateinit var observer: Observer<WorkInfo?>
+        observer = Observer { info ->
+            when (info?.state) {
+                WorkInfo.State.SUCCEEDED -> {
+                    emitCameraEvent(
+                        mapOf(
+                            "event" to "uploadCompleted",
+                            "state" to "processing",
+                            "timestampMicros" to SystemClock.elapsedRealtimeNanos() / 1_000,
+                        ),
+                    )
+                    liveData.removeObserver(observer)
+                }
+                WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
+                    emitCameraEvent(
+                        mapOf(
+                            "event" to "uploadFailed",
+                            "state" to "processing",
+                            "timestampMicros" to SystemClock.elapsedRealtimeNanos() / 1_000,
+                            "message" to (info.outputData.getString(CloudUploadWorker.KEY_ERROR)
+                                ?: "O servidor recusou o upload"),
+                        ),
+                    )
+                    liveData.removeObserver(observer)
+                }
+                else -> Unit
+            }
+        }
+        liveData.observeForever(observer)
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {

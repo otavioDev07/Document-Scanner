@@ -26,6 +26,8 @@ enum ScannerEventType {
   captureCompleted,
   processingStarted,
   processingCompleted,
+  uploadCompleted,
+  uploadFailed,
   diagnostics,
   error,
 }
@@ -59,6 +61,7 @@ final class ScannerEvent {
   final String? errorCode;
   final String? errorMessage;
   final bool automatic;
+
   /// True only while a detected quadrilateral is rejected by the FFT blur gate.
   final bool documentBlurred;
 

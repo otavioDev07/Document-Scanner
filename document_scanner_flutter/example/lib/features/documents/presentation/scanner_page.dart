@@ -43,6 +43,9 @@ class _ScannerPageState extends State<AutomaticScannerPage>
   List<ScannerPoint>? _editedCorners;
   NativeStatus? _status;
   String? _error;
+  String? _uploadNotice;
+  bool _uploadFailed = false;
+  bool _uploadPending = false;
   bool _busy = false;
   bool _cameraActive = false;
   bool _handlingCapture = false;
@@ -78,6 +81,21 @@ class _ScannerPageState extends State<AutomaticScannerPage>
       }
       if (event.type == ScannerEventType.error && mounted) {
         setState(() => _error = event.errorMessage ?? event.errorCode);
+      }
+      if (event.type == ScannerEventType.uploadCompleted && mounted) {
+        setState(() {
+          _uploadFailed = false;
+          _uploadPending = false;
+          _uploadNotice = 'Upload realizado com sucesso.';
+        });
+        unawaited(_returnToInitialAfterUpload());
+      }
+      if (event.type == ScannerEventType.uploadFailed && mounted) {
+        setState(() {
+          _uploadFailed = true;
+          _uploadPending = false;
+          _uploadNotice = 'O upload falhou — verifique a chave/link definidos.';
+        });
       }
     });
     _initialize();
@@ -176,7 +194,9 @@ class _ScannerPageState extends State<AutomaticScannerPage>
         }
       });
     } catch (error) {
-      if (automatic) {
+      if (automatic && error is FormatException) {
+        if (mounted) setState(() => _error = error.message.toString());
+      } else if (automatic) {
         await _resumeAfterAutomaticCaptureFailure('$error');
       } else if (mounted) {
         setState(() => _error = '$error');
@@ -274,12 +294,28 @@ class _ScannerPageState extends State<AutomaticScannerPage>
       return;
     }
     final String destination = widget.settings.cloudDestination.trim();
-    if (destination.isEmpty) {
+    final String securityKey = widget.settings.cloudSecurityKey.trim();
+    if (destination.isEmpty || securityKey.isEmpty) {
       throw const FormatException(
-        'Configure um endpoint de nuvem antes de enviar a imagem.',
+        'Configure o endpoint e a chave de segurança antes de enviar a imagem.',
       );
     }
-    await _controller.enqueueImageUpload(result.path, destination);
+    await _controller.enqueueImageUpload(
+      result.path,
+      destination,
+      securityKey: securityKey,
+    );
+    if (mounted) {
+      setState(() {
+        _uploadFailed = false;
+        _uploadPending = true;
+        _uploadNotice = 'Upload enviado. Aguardando confirmação…';
+      });
+    }
+  }
+
+  Future<void> _returnToInitialAfterUpload() async {
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
     if (mounted) Navigator.pop(context);
   }
 
@@ -401,14 +437,6 @@ class _ScannerPageState extends State<AutomaticScannerPage>
                 ],
               ),
             ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: Colors.redAccent),
-                ),
-              ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -420,6 +448,18 @@ class _ScannerPageState extends State<AutomaticScannerPage>
                         ? DocumentScannerPreview(
                             controller: _controller,
                             notice: _cameraNotice,
+                          )
+                        : _error != null
+                        ? _UploadStatus(
+                            message: _error!,
+                            pending: false,
+                            failed: true,
+                          )
+                        : _uploadNotice != null
+                        ? _UploadStatus(
+                            message: _uploadNotice!,
+                            pending: _uploadPending,
+                            failed: _uploadFailed,
                           )
                         : _handlingCapture
                         ? const _ProcessingCoupon()
@@ -471,9 +511,7 @@ class _ScannerPageState extends State<AutomaticScannerPage>
           ),
           IconButton.filled(
             tooltip: 'Captura manual desativada',
-            onPressed: _manualControlsEnabled && !_busy
-                ? _captureCamera
-                : null,
+            onPressed: _manualControlsEnabled && !_busy ? _captureCamera : null,
             iconSize: 36,
             padding: const EdgeInsets.all(18),
             icon: const Icon(Icons.camera_alt),
@@ -545,17 +583,13 @@ class _ScannerPageState extends State<AutomaticScannerPage>
         const SizedBox(width: 8),
         IconButton.filledTonal(
           tooltip: 'Galeria desativada',
-          onPressed: _manualControlsEnabled && !_busy
-              ? _chooseAndDetect
-              : null,
+          onPressed: _manualControlsEnabled && !_busy ? _chooseAndDetect : null,
           icon: const Icon(Icons.photo_library_outlined),
         ),
         const SizedBox(width: 8),
         IconButton.filledTonal(
           tooltip: 'Recorte manual desativado',
-          onPressed: _manualControlsEnabled &&
-                  !_busy &&
-                  _editedCorners != null
+          onPressed: _manualControlsEnabled && !_busy && _editedCorners != null
               ? _cropDocument
               : null,
           icon: const Icon(Icons.crop),
@@ -573,8 +607,8 @@ class _ScannerPageState extends State<AutomaticScannerPage>
 
   static String _detectionFailureMessage(DetectionResult detection) =>
       detection.source == 'fft_rejected'
-          ? 'A imagem está borrada ou desfocada. Mantenha a câmera firme e tente novamente.'
-          : 'O documento se moveu durante a captura. Tente mantê-lo estável.';
+      ? 'A imagem está borrada ou desfocada. Mantenha a câmera firme e tente novamente.'
+      : 'O documento se moveu durante a captura. Tente mantê-lo estável.';
 }
 
 class _ProcessingCoupon extends StatelessWidget {
@@ -582,21 +616,63 @@ class _ProcessingCoupon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            SizedBox.square(
-              dimension: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-            SizedBox(width: 12),
-            Text(
-              'Processando cupom…',
-              style: TextStyle(color: Colors.white, fontSize: 16),
-            ),
-          ],
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        SizedBox.square(
+          dimension: 22,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
         ),
-      );
+        SizedBox(width: 12),
+        Text(
+          'Processando cupom…',
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
+      ],
+    ),
+  );
+}
+
+class _UploadStatus extends StatelessWidget {
+  const _UploadStatus({
+    required this.message,
+    required this.pending,
+    required this.failed,
+  });
+
+  final String message;
+  final bool pending;
+  final bool failed;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (pending)
+          const SizedBox.square(
+            dimension: 28,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          )
+        else
+          Icon(
+            failed ? Icons.error_outline : Icons.check_circle_outline,
+            color: failed ? Colors.redAccent : Colors.greenAccent,
+            size: 42,
+          ),
+        const SizedBox(height: 16),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: failed ? Colors.redAccent : Colors.greenAccent,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _OpeningAutomaticCamera extends StatelessWidget {
@@ -607,31 +683,31 @@ class _OpeningAutomaticCamera extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (!failed)
-              const SizedBox.square(
-                dimension: 28,
-                child: CircularProgressIndicator(strokeWidth: 2.5),
-              ),
-            const SizedBox(height: 16),
-            Text(
-              failed
-                  ? 'Não foi possível abrir a câmera automática.'
-                  : 'Abrindo câmera automática…',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 16),
-            ),
-            if (failed) ...<Widget>[
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Tentar novamente'),
-              ),
-            ],
-          ],
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (!failed)
+          const SizedBox.square(
+            dimension: 28,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
+        const SizedBox(height: 16),
+        Text(
+          failed
+              ? 'Não foi possível abrir a câmera automática.'
+              : 'Abrindo câmera automática…',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white70, fontSize: 16),
         ),
-      );
+        if (failed) ...<Widget>[
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Tentar novamente'),
+          ),
+        ],
+      ],
+    ),
+  );
 }

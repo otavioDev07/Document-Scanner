@@ -145,12 +145,17 @@ class MethodChannelDocumentScannerFlutter
       );
 
   @override
-  Future<String> enqueueImageUpload(String imagePath, String destination) =>
+  Future<String> enqueueImageUpload(
+    String imagePath,
+    String destination, {
+    String securityKey = '',
+  }) =>
       _invoke(
         'enqueueImageUpload',
         arguments: <String, Object>{
           'imagePath': imagePath,
           'destination': destination,
+          'securityKey': securityKey,
         },
         parser: (Object? value) {
           if (value is! String || value.isEmpty) {
