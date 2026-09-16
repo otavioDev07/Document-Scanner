@@ -23,7 +23,6 @@ allprojects {
 
 plugins {
     id("com.android.library")
-    id("com.chaquo.python") version "17.0.0"
 }
 
 android {
@@ -48,9 +47,6 @@ android {
     defaultConfig {
         minSdk = 24
 
-        // The accuracy-validation build intentionally embeds CPython. Restricting
-        // it to modern devices avoids packaging four copies of both Python and
-        // OpenCV in a universal APK.
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -96,21 +92,6 @@ android {
                     showStandardStreams = true
                 }
             }
-        }
-    }
-}
-
-chaquopy {
-    defaultConfig {
-        // OpenCV's Android wheel is currently available for CPython 3.10.
-        version = "3.10"
-        val pyenvPython = System.getProperty("user.home") + "/.pyenv/versions/3.10.19/bin/python3.10"
-        if (file(pyenvPython).isFile) {
-            buildPython(pyenvPython)
-        }
-        pip {
-            install("numpy==1.23.3")
-            install("opencv-python-headless==4.5.1.48")
         }
     }
 }

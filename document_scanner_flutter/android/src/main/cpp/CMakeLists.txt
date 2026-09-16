@@ -9,6 +9,7 @@ add_library(
     document_scanner_flutter
     SHARED
     NativeBridge.cpp
+    NativeCascade.cpp
     ${SHARED_NATIVE_DIR}/DocumentDetector.cpp
     android_utils.cpp
 )
@@ -21,7 +22,7 @@ target_include_directories(
 )
 
 target_compile_features(document_scanner_flutter PRIVATE cxx_std_20)
-target_compile_options(document_scanner_flutter PRIVATE -Wall -Wextra)
+target_compile_options(document_scanner_flutter PRIVATE -Wall -Wextra -O3)
 
 target_link_libraries(
     document_scanner_flutter

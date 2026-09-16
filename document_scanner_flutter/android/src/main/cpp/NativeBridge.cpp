@@ -1,13 +1,16 @@
 #include <jni.h>
 #include <android/bitmap.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
 
 #include "DocumentDetector.h"
+#include "NativeCascade.h"
 #include "android_utils.h"
 
 namespace {
@@ -38,6 +41,85 @@ std::string readString(JNIEnv *env, jstring value) {
     std::string result(characters);
     env->ReleaseStringUTFChars(value, characters);
     return result;
+}
+
+std::vector<cv::Point2f> readPixelPoints(JNIEnv *env, jdoubleArray values) {
+    if (values == nullptr) return {};
+    const jsize length = env->GetArrayLength(values);
+    if (length != 8) throw std::invalid_argument("Exactly four x/y points are required");
+    std::array<jdouble, 8> raw{};
+    env->GetDoubleArrayRegion(values, 0, length, raw.data());
+    std::vector<cv::Point2f> points;
+    points.reserve(4);
+    for (int index = 0; index < 4; ++index) {
+        points.emplace_back(static_cast<float>(raw[index * 2]), static_cast<float>(raw[index * 2 + 1]));
+    }
+    return points;
+}
+
+int engineCode(const std::string& engine) {
+    if (engine == "cpp_rdp_hough") return 1;
+    if (engine == "native_hough") return 2;
+    if (engine == "native_watershed") return 3;
+    if (engine == "native_watershed_area_guard") return 4;
+    if (engine == "fft_rejected") return 5;
+    if (engine == "underexposed_preview") return 6;
+    if (engine == "arbiter") return 7;
+    if (engine == "arbiter_fallback_lock") return 8;
+    if (engine.rfind("consensus_", 0) == 0) return 9;
+    return 0;
+}
+
+jdoubleArray toJavaResult(JNIEnv* env, const cascade::Result& result) {
+    // [valid, found, score, fftScore (NaN = null), engineCode, eight x/y coordinates].
+    std::array<jdouble, 13> values{};
+    values[0] = result.valid ? 1.0 : 0.0;
+    values[1] = result.found ? 1.0 : 0.0;
+    values[2] = result.score;
+    values[3] = result.fftScore < 0.0 ? std::numeric_limits<double>::quiet_NaN() : result.fftScore;
+    values[4] = engineCode(result.engine);
+    for (int index = 0; index < 4; ++index) {
+        values[5 + index * 2] = result.points[index].x;
+        values[6 + index * 2] = result.points[index].y;
+    }
+    jdoubleArray output = env->NewDoubleArray(static_cast<jsize>(values.size()));
+    if (output != nullptr) env->SetDoubleArrayRegion(output, 0, static_cast<jsize>(values.size()), values.data());
+    return output;
+}
+
+cv::Mat rgbaToBgr(const cv::Mat& rgba) {
+    cv::Mat bgr;
+    cv::cvtColor(rgba, bgr, cv::COLOR_RGBA2BGR);
+    return bgr;
+}
+
+bool previewIsTooDark(const cv::Mat& bgr) {
+    cv::Mat gray;
+    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    const double mean = cv::mean(gray)[0];
+    int histogram[256]{};
+    for (int row = 0; row < gray.rows; ++row) {
+        const auto* pixels = gray.ptr<uchar>(row);
+        for (int column = 0; column < gray.cols; ++column) ++histogram[pixels[column]];
+    }
+    const int total = static_cast<int>(gray.total());
+    const auto percentile = [&histogram, total](double quantile) {
+        const double rank = quantile * (total - 1);
+        const int lowRank = static_cast<int>(std::floor(rank));
+        const int highRank = static_cast<int>(std::ceil(rank));
+        int cumulative = 0;
+        int low = 0;
+        int high = 0;
+        for (int value = 0; value < 256; ++value) {
+            cumulative += histogram[value];
+            if (cumulative > lowRank && (value == 0 || cumulative - histogram[value] <= lowRank)) low = value;
+            if (cumulative > highRank) { high = value; break; }
+        }
+        return low + (high - low) * (rank - lowRank);
+    };
+    const double p05 = percentile(0.05);
+    const double p95 = percentile(0.95);
+    return p95 < 45.0 || (mean < 30.0 && (p95 - p05) < 25.0);
 }
 
 }  // namespace
@@ -155,6 +237,93 @@ Java_br_com_dinheironanota_document_1scanner_1flutter_NativeDocumentProcessor_na
         throwJava(env, error.what());
     } catch (...) {
         throwJava(env, "Unknown native YUV detection error");
+    }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_br_com_dinheironanota_document_1scanner_1flutter_NativeDocumentProcessor_nativeProcessBitmapCascade(
+        JNIEnv *env,
+        jobject,
+        jobject bitmap,
+        jdoubleArray rdpCorners,
+        jdouble rdpScore) {
+    try {
+        cv::Mat rgba;
+        bitmap_to_mat(env, bitmap, rgba);
+        if (env->ExceptionCheck() || rgba.empty()) return nullptr;
+        const auto result = cascade::process(rgbaToBgr(rgba), readPixelPoints(env, rdpCorners), rdpScore);
+        return toJavaResult(env, result);
+    } catch (const cv::Exception& error) {
+        throwJava(env, error.what());
+    } catch (const std::exception& error) {
+        throwJava(env, error.what());
+    } catch (...) {
+        throwJava(env, "Unknown native image cascade error");
+    }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_br_com_dinheironanota_document_1scanner_1flutter_NativeDocumentProcessor_nativeProcessYuvCascade(
+        JNIEnv *env,
+        jobject,
+        jint width,
+        jint height,
+        jint chromaPixelStride,
+        jobject yBuffer,
+        jint yRowStride,
+        jobject uBuffer,
+        jint uRowStride,
+        jobject vBuffer,
+        jint vRowStride,
+        jint rotationDegrees,
+        jdoubleArray rdpCorners,
+        jdouble rdpScore) {
+    try {
+        if (width <= 0 || height <= 0 || env->GetDirectBufferAddress(yBuffer) == nullptr ||
+            env->GetDirectBufferAddress(uBuffer) == nullptr || env->GetDirectBufferAddress(vBuffer) == nullptr) {
+            throw std::invalid_argument("Camera frame has invalid direct YUV buffers");
+        }
+        cv::Mat rgba;
+        buffer_to_mat(env, width, height, chromaPixelStride, yBuffer, yRowStride, uBuffer, uRowStride,
+                      vBuffer, vRowStride, rgba);
+        cv::Mat bgr = rgbaToBgr(rgba);
+        if (rotationDegrees == 90) cv::rotate(bgr, bgr, cv::ROTATE_90_CLOCKWISE);
+        else if (rotationDegrees == 180) cv::rotate(bgr, bgr, cv::ROTATE_180);
+        else if (rotationDegrees == 270) cv::rotate(bgr, bgr, cv::ROTATE_90_COUNTERCLOCKWISE);
+        if (previewIsTooDark(bgr)) {
+            cascade::Result underexposed;
+            underexposed.engine = "underexposed_preview";
+            return toJavaResult(env, underexposed);
+        }
+        return toJavaResult(env, cascade::process(bgr, readPixelPoints(env, rdpCorners), rdpScore));
+    } catch (const cv::Exception& error) {
+        throwJava(env, error.what());
+    } catch (const std::exception& error) {
+        throwJava(env, error.what());
+    } catch (...) {
+        throwJava(env, "Unknown native YUV cascade error");
+    }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_br_com_dinheironanota_document_1scanner_1flutter_NativeDocumentProcessor_nativeEvaluateSharpness(
+        JNIEnv *env,
+        jobject,
+        jobject bitmap) {
+    try {
+        cv::Mat rgba;
+        bitmap_to_mat(env, bitmap, rgba);
+        if (env->ExceptionCheck() || rgba.empty()) return nullptr;
+        return toJavaResult(env, cascade::evaluateSharpness(rgbaToBgr(rgba)));
+    } catch (const cv::Exception& error) {
+        throwJava(env, error.what());
+    } catch (const std::exception& error) {
+        throwJava(env, error.what());
+    } catch (...) {
+        throwJava(env, "Unknown native sharpness evaluation error");
     }
     return nullptr;
 }

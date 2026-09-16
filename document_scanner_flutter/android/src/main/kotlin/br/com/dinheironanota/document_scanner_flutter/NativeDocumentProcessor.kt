@@ -1,8 +1,8 @@
 package br.com.dinheironanota.document_scanner_flutter
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.content.Context
 import java.io.File
 import java.io.FileNotFoundException
 import java.nio.ByteBuffer
@@ -10,12 +10,22 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-internal class NativeDocumentProcessor(context: Context) {
+internal data class CascadeDetection(
+    val corners: DoubleArray?,
+    val confidence: Double,
+    val source: String,
+    val fftScore: Double?,
+)
+
+internal data class FftValidation(
+    val valid: Boolean,
+    val score: Double,
+)
+
+internal class NativeDocumentProcessor(@Suppress("UNUSED_PARAMETER") context: Context) {
     init {
         System.loadLibrary("document_scanner_flutter")
     }
-
-    private val cascade by lazy { PythonCascadeProcessor(context.applicationContext) }
 
     fun detect(
         sourcePath: String,
@@ -41,15 +51,15 @@ internal class NativeDocumentProcessor(context: Context) {
                 )
             } else {
                 val raw = nativeDetect(bitmap, resizeThreshold, areaScaleMinFactor)
-                cascade.processEncodedBitmap(
-                    encodedBitmap = cascade.encodeBitmap(bitmap),
-                    rdpCorners = raw,
-                    rdpScore = geometryScore(raw, bitmap.width, bitmap.height),
+                decodeCascade(
+                    nativeProcessBitmapCascade(
+                        bitmap,
+                        raw,
+                        geometryScore(raw, bitmap.width, bitmap.height),
+                    ),
                 )
             }
-            // Both detectors and the eventual crop must use this exact
-            // EXIF-oriented bitmap. Passing sourcePath to Python made cv2
-            // decode an unrotated JPEG while C++ used the rotated bitmap.
+            // The native detector and cascade share this same EXIF-oriented bitmap.
             val corners = detection.corners?.let { points ->
                 require(points.size == 8) { "Native detector returned an invalid point count" }
                 List(4) { index ->
@@ -172,11 +182,8 @@ internal class NativeDocumentProcessor(context: Context) {
         resizeThreshold: Int,
         areaScaleMinFactor: Double,
     ): CascadeDetection {
-        // nativeDetectYuv is a preview-oriented API: its C++ bridge returns
-        // normalized coordinates so the Flutter overlay can consume them.
-        // The cascade, however, performs geometry, warping and consensus in
-        // image-pixel coordinates. Keep that conversion at this boundary so
-        // every Python engine shares one coordinate system.
+        // nativeDetectYuv returns normalized coordinates, while the native
+        // cascade operates in pixels for geometry, warping and consensus.
         val normalizedRdpCorners = nativeDetectYuv(
             width,
             height,
@@ -198,23 +205,15 @@ internal class NativeDocumentProcessor(context: Context) {
             width = orientedWidth,
             height = orientedHeight,
         )
-        val detection = cascade.processFrame(
-            yBuffer = yBuffer,
-            uBuffer = uBuffer,
-            vBuffer = vBuffer,
-            width = width,
-            height = height,
-            yRowStride = yRowStride,
-            uRowStride = uRowStride,
-            vRowStride = vRowStride,
-            chromaPixelStride = chromaPixelStride,
-            rotationDegrees = rotationDegrees,
-            rdpCorners = rdpCorners,
-            rdpScore = geometryScore(rdpCorners, orientedWidth, orientedHeight),
+        val detection = decodeCascade(
+            nativeProcessYuvCascade(
+                width, height, chromaPixelStride, yBuffer, yRowStride, uBuffer, uRowStride,
+                vBuffer, vRowStride, rotationDegrees, rdpCorners,
+                geometryScore(rdpCorners, orientedWidth, orientedHeight),
+            ),
         )
-        // The controller and DocumentOverlay use normalized preview points.
-        // Python candidates are pixels (including Hough and Watershed), so
-        // normalize its selected result before it reaches stability/UI.
+        // The controller and DocumentOverlay use normalized preview points;
+        // native candidates are pixels, so normalize only at this UI boundary.
         return detection.copy(
             corners = detection.corners?.toNormalizedCoordinates(
                 width = orientedWidth,
@@ -256,6 +255,29 @@ internal class NativeDocumentProcessor(context: Context) {
         areaScaleMinFactor: Double,
     ): DoubleArray?
 
+    private external fun nativeProcessBitmapCascade(
+        sourceBitmap: Bitmap,
+        rdpCorners: DoubleArray?,
+        rdpScore: Double,
+    ): DoubleArray?
+
+    private external fun nativeProcessYuvCascade(
+        width: Int,
+        height: Int,
+        chromaPixelStride: Int,
+        yBuffer: ByteBuffer,
+        yRowStride: Int,
+        uBuffer: ByteBuffer,
+        uRowStride: Int,
+        vBuffer: ByteBuffer,
+        vRowStride: Int,
+        rotationDegrees: Int,
+        rdpCorners: DoubleArray?,
+        rdpScore: Double,
+    ): DoubleArray?
+
+    private external fun nativeEvaluateSharpness(sourceBitmap: Bitmap): DoubleArray?
+
     private data class PixelPoint(val x: Double, val y: Double)
 
     private fun distance(first: PixelPoint, second: PixelPoint): Double =
@@ -294,7 +316,7 @@ internal class NativeDocumentProcessor(context: Context) {
         val warped = Bitmap.createBitmap(outputSize.width, outputSize.height, Bitmap.Config.ARGB_8888)
         return try {
             nativeCrop(source, normalizedPoints, warped)
-            val fft = cascade.evaluateCrop(warped)
+            val fft = decodeSharpness(nativeEvaluateSharpness(warped))
             if (fft.valid) {
                 CascadeDetection(
                     corners = previewPoints,
@@ -321,6 +343,25 @@ internal class NativeDocumentProcessor(context: Context) {
             val dimension = if (index % 2 == 0) width else height
             (this[index] * dimension).coerceIn(0.0, dimension.toDouble())
         }
+    }
+
+    /** Decodes the fixed native ABI without allocations for JSON, PNG or a JVM object graph per frame. */
+    private fun decodeCascade(raw: DoubleArray?): CascadeDetection {
+        require(raw != null && raw.size == CASCADE_RESULT_SIZE) { "Native cascade returned an invalid result" }
+        val valid = raw[0] != 0.0
+        val found = raw[1] != 0.0
+        val corners = if (valid && found) DoubleArray(8) { raw[5 + it] } else null
+        return CascadeDetection(
+            corners = corners,
+            confidence = raw[2],
+            source = CASCADE_SOURCES[raw[4].toInt()] ?: "native_cascade",
+            fftScore = raw[3].takeUnless { it.isNaN() },
+        )
+    }
+
+    private fun decodeSharpness(raw: DoubleArray?): FftValidation {
+        require(raw != null && raw.size == CASCADE_RESULT_SIZE) { "Native sharpness evaluator returned an invalid result" }
+        return FftValidation(valid = raw[0] != 0.0, score = raw[3].takeUnless { it.isNaN() } ?: 0.0)
     }
 
     private fun List<Map<String, Number>>.toPixelCoordinates(
@@ -376,6 +417,18 @@ internal class NativeDocumentProcessor(context: Context) {
         (this?.get(name) as? Number)?.toDouble() ?: fallback
 
     private companion object {
+        const val CASCADE_RESULT_SIZE = 13
+        val CASCADE_SOURCES = mapOf(
+            1 to "cpp_rdp_hough",
+            2 to "native_hough",
+            3 to "native_watershed",
+            4 to "native_watershed_area_guard",
+            5 to "fft_rejected",
+            6 to "underexposed_preview",
+            7 to "arbiter",
+            8 to "arbiter_fallback_lock",
+            9 to "consensus_native",
+        )
         val SUPPORTED_FILTERS = setOf("original", "grayscale", "highContrast", "colorBoost")
     }
 }
